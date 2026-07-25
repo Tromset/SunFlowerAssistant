@@ -7,16 +7,47 @@ body {
   display: flex;
   justify-content: center;
   align-items: flex-start;
-  padding-top: 6px;
+  /* L'air du bas n'est pas décoratif : la fenêtre est transparente et
+     s'ajuste à la carte (voir panelResize). Sans cette marge, le dernier
+     pixel de la carte tombe pile sur le bord de la fenêtre et les deux coins
+     arrondis du bas sont rognés. */
+  padding: 6px 0 8px;
 }
 
+/* La carte est une colonne : en-tête, raccourci et onglets en haut, pied en
+   bas, et la vue active au milieu — c'est ELLE qui défile quand ça déborde.
+   La carte, elle, ne dépasse jamais la fenêtre, donc son `border-radius` du
+   bas reste toujours visible, quelle que soit la longueur du contenu. */
 #card {
   width: 320px;
+  /* La carte est un élément flex de <body> : son `min-width: auto` vaut la
+     largeur min-content de son contenu, donc une ligne qui refuse de se
+     couper (le badge de version, un chemin) pourrait l'élargir au-delà des
+     320 px et la faire déborder de la fenêtre. La largeur est imposée, c'est
+     au contenu de s'y plier. */
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  max-height: 100%;
   background: var(--ink-2);
   border: 1px solid var(--border-on-dark);
   border-radius: 16px;
   box-shadow: var(--shadow-panel-overlay);
   overflow: hidden;
+}
+#card > header,
+#card > .divider,
+#card > .shortcut,
+#card > .tabs,
+#card > footer {
+  flex: 0 0 auto;
+}
+#view-home,
+#view-agents {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 header {
@@ -252,11 +283,6 @@ header {
 }
 
 /* ---- Onglet agents ---- */
-#view-agents {
-  max-height: 400px;
-  overflow-y: auto;
-  overflow-x: hidden;
-}
 #agent-task,
 #agent-dir {
   width: 100%;
@@ -587,23 +613,55 @@ header {
 }
 footer {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  flex-direction: column;
+  gap: 6px;
   padding: 12px 16px 14px;
 }
+.footer-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+/* Un vrai bouton, pas un lien discret : c'est l'interrupteur général. */
 #quit {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font-family: inherit;
   font-size: 12px;
-  color: var(--text-on-dark-mute);
-  background: none;
-  border: none;
-  padding: 0;
+  color: var(--text-on-dark-soft);
+  background: rgba(217, 119, 87, 0.08);
+  border: 1px solid var(--border-accent);
+  border-radius: 999px;
+  padding: 5px 13px;
   cursor: pointer;
+  transition: color var(--dur-fast) var(--ease),
+    background var(--dur-fast) var(--ease);
 }
 #quit:hover {
   color: var(--cream);
+  background: var(--orange);
+  border-color: var(--orange);
+}
+#quit:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.quit-mark {
+  font-size: 10px;
+  color: var(--orange);
+}
+#quit:hover .quit-mark {
+  color: var(--cream);
+}
+.quit-sub {
+  font-size: 10.5px;
+  line-height: 1.45;
+  color: var(--text-on-dark-mute);
 }
 .version {
   font-size: 11px;
   color: var(--text-on-dark-mute);
+  white-space: nowrap;
 }

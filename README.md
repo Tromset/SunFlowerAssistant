@@ -44,7 +44,7 @@ The app never picks a model — it sends messages and the server decides which O
 
 `apps/electron` is a second, fully local implementation of the companion, built from the Claude Design prototype in `app-electron-avec-tournesol-local/`. Unlike the Swift app + Worker pair, it needs **no server, no Clerk, no API keys**: push-to-talk (hold ⌃ ⌥) → mic capture → **local Whisper** transcription (whisper.cpp, Metal) → screenshot → **local Ollama** vision model → streamed answer in a speech bubble next to a pixel-art sunflower that follows your cursor, spoken aloud with the macOS system voice. English UI, in the app's black-and-yellow theme.
 
-Surfaces: a status island under the menu-bar notch, the cursor-following sunflower companion with its speech bubble, an orange pointing overlay that frames the one element the model points at — sized to that element's bounding box (see "Pointing" below), a menu-bar tray panel (live permissions, model status, quit), and a 3-step onboarding on first launch.
+Surfaces: a status island under the menu-bar notch, the cursor-following sunflower companion with its speech bubble, an orange pointing overlay that frames the one element the model points at — sized to that element's bounding box (see "Pointing" below), a menu-bar tray panel (live permissions, model status, moods, work, quit), a dedicated **Sunflower Work** window, and a 3-step onboarding on first launch.
 
 ### Screenshots
 
@@ -98,16 +98,40 @@ Screen recording has a macOS quirk: its Settings pane only lists an app *after* 
 
 ### The terminal
 
-When launched from a terminal (`npm start` or `sunflower`), sunflower turns it into a first-class interface:
+When launched from a terminal (`npm start` or `sunflower`), sunflower turns it into a first-class interface — and it's the same black-and-yellow, same pixel sunflower as the windows, drawn in the terminal itself:
 
-- A startup banner shows the Ollama host and model, whisper status, and the hotkey — with the fix printed in red when something is missing (`ollama serve`, `ollama pull …`).
+- **The startup banner draws the real sunflower.** Not ASCII art approximating it: the very pixel art the app renders as SVG (`shared/sunflower-pixels.ts`) is rasterised into half-block characters (`▀`, one glyph carrying two pixels, each doubled horizontally so the pixels come out square) in 24-bit colour, next to a rounded status card (`╭─ ✿ sunflower ─── v0.1.0 ─╮`) listing model, Ollama host, voice, hotkey, Sunflower-Code and Sunflower Work. Without truecolor it degrades to shape-only blocks; without a TTY, to the historical `[sunflower]` log lines.
+- **A mode badge sits in the prompt** — `ask ❯` talks to the screen companion, `code ❯` / `plan ❯` / `chat ❯` / `vision ❯` talk to Sunflower-Code (below). `/mode` switches.
+- **Slash commands**, in a card of their own under `/help`: `/mode`, `/permission`, `/cd`, `/model`, `/status`, `/clear`, `/work <chore>`, `/agents`, `/quit`.
 - **Type a question at the `❯` prompt** — it takes a screenshot at your cursor and runs the exact same pipeline as voice: the answer streams into the terminal *and* into the companion bubble with speech. Typing works even while whisper is still downloading.
 - Voice sessions render live too: `listening…`, `looking at your screen…`, your transcribed question, a spinner while the model thinks, then the streamed answer with its duration.
 - On a cold start the spinner says `waking the model…` instead of failing — sunflower preloads the model when the app launches and again the moment you start speaking, and allows up to ~3 minutes for the first token of a cold load.
 - **Every 10 000 tokens of context, a fresh chat starts automatically.** The Ollama runner survives from one question to the next (`keep_alive` + prompt cache), and with small local vision models that accumulated state degrades answers over a long session — early questions read the screen perfectly, later ones start hallucinating. Sunflower counts the tokens each answer really consumed (as reported by Ollama) and, past 10k, prints `✦ … starting a fresh chat`, unloads the model — discarding all of its state — and preloads it again in the background while you read the answer.
 - **Native whisper.cpp/Metal logs never reach the terminal.** whisper.cpp re-initialises its state (Metal context included) on every transcription and logs the whole process to stderr — dozens of `whisper_*` / `ggml_*` lines per question. The launcher filters them out into `~/Library/Application Support/sunflower/logs/native.log` (rotated at 5 MB) so the terminal only shows the dialogue; anything else written to stderr (real errors) still comes through.
-- **Ctrl+C** interrupts the current answer; at an idle prompt it quits the app. Set `SUNFLOWER_DEBUG=1` for full error details and the raw, unfiltered native logs.
+- **Ctrl+C** interrupts the current answer, the current Sunflower-Code turn *and* any work run; at an idle prompt it quits the app. Set `SUNFLOWER_DEBUG=1` for full error details and the raw, unfiltered native logs.
 - Without a TTY (packaged app, redirected output) all of this degrades to plain `[sunflower]` log lines — nothing else changes.
+
+### Sunflower-Code — the coding harness
+
+The terminal isn't only a question box. `/mode code` (or `chat`, `vision`, `plan`) routes **everything you type** to **Sunflower-Code**, a port of [Ollama-Code](https://github.com/Tromset/Ollama-Code)'s infrastructure living inside sunflower and running against the same local Ollama. There is exactly one entry point — `routeToCode()` in `main/index.ts` — so there is exactly one place to look to know where a message went.
+
+**Four modes**, same names as the original: `code` (the full workshop), `chat` (no tools at all), `vision` (same as code, with a screenshot of your screen attached to the message), `plan` (read-only: investigate, then write out the plan).
+
+**Seven tools**, all confined to one project folder — `read_file`, `write_file`, `edit_file`, `move_file`, `list_files`, `search`, `bash`. An absolute path, a `..`, or a filename that looks like a secret (`.env`, `.npmrc`, `id_rsa`…) is refused before anything is opened; `bash` runs with its working directory locked to that folder and goes through the same non-bypassable blacklist as the panel's background agents (`main/shell-guard.ts` — `rm -rf`, `sudo`, force pushes, piping downloads into a shell…). `/cd` moves the folder.
+
+**Three permission levels**, `/permission`:
+
+| Level | Reads | Writes and shell |
+| --- | --- | --- |
+| `plan` | free | refused outright |
+| `normal` *(default)* | free | each one waits for a `y` at the prompt |
+| `yolo` | free | no questions asked |
+
+The mode can restrict further but never widen: `plan` mode is read-only even under `yolo`, and `chat` exposes no tools at all whatever the level.
+
+**Two tool dialects, one code path.** Small local models are not equal in front of function calling, so Sunflower-Code asks Ollama (`/api/show`) whether the model advertises `tools`. If it does, the native tool interface is used. If it doesn't, the prompt describes a text protocol instead — one fenced ```tool block holding `{"name": …, "args": {…}}` — and the parser turns it into the same call object. Nothing downstream knows which one served.
+
+**The context renews itself.** Past a token budget the session is *compacted*: the original request, the tools already run and the last answer are folded into a short local summary (no extra model round-trip), and the conversation restarts from a fresh window. That's what makes a long refactor survivable on an 8B model. If the model asks for more tool calls than a turn allows, it's told so explicitly rather than silently truncated.
 
 ### Pointing
 
@@ -122,6 +146,16 @@ The single-element frame draws **immediately** from the model's own box — poin
 Double-click the sunflower, flip the **companion** toggle (**roam** / **dock to corner**) in the menu-bar panel, or use the tray menu (**dock sunflower to corner** / **let sunflower roam**), to pin the companion in one spot instead of having it chase your cursor. Docked, it shrinks to a compact ~110×110 badge parked in the bottom-right corner of the display's work area, with a scaled-down speech bubble above it, so nothing floats over the middle of the screen while you're watching or sharing it. The mode is saved (`companionMode` in `config.json`) and restored on the next launch, and a docked companion re-pins itself to the corner if the display's resolution or scaling changes. The companion window is click-through everywhere except the flower itself — hovering it briefly makes the window interactive so the double-click can land, then releases the instant the cursor leaves, so it never eats a click meant for whatever's underneath.
 
 This shipped alongside a pass on that same tracking loop, prompted by a "this app is heating up my Mac" report: instead of an unconditional 60 fps timer and an unconditional `setBounds` call, the companion now runs at ~30 fps while it's actually moving, drops to ~6 Hz after 3 seconds of cursor stillness, and stops the loop entirely while docked, hidden, or holding still — `setBounds` is skipped outright when the target position hasn't changed. Its decorative animations (the flower's sway, the blinking caret) pause the same way after 60 seconds of idle, and the mostly-hidden pointer overlay now lets Chromium throttle its background timers instead of being exempted like the always-visible island, companion, and agent-orb windows.
+
+### Moods — a little prop for what you're doing
+
+When the sunflower has nothing else to do, it gives itself an accessory that matches whatever app is in front of you: **headphones** on Deezer or Spotify, a **little laptop** on Cursor or VS Code, an **"AI" placard** on Claude, ChatGPT or Gemini, **popcorn** in front of YouTube or Netflix, a **plaid blanket** hunched over a screen in Figma or Premiere Pro, a **phone with messages flying out** on Snapchat or Discord, and the same phone with **wilted petals, a fallen one on the floor and a slow "zzz"** on TikTok or Instagram. Each is pixel art in the same grid and palette as the rest of the flower (`shared/sunflower-pixels.ts`), animated purely in CSS under a class the companion adds and removes — nothing loops outside its own mood.
+
+Two rules keep it honest. **A mood only ever shows at idle**: the moment a question, a guide, an agent or a work run has something to say, the real pose wins and the prop disappears. And **it stays on the machine**: `main/activity.ts` asks macOS for the frontmost app's name every few seconds — plus the active tab's URL when that app is a scriptable browser — classifies it into one of seven families (`shared/activity.ts`), and throws the rest away. Nothing is written to disk, nothing is sent to the model, nothing leaves the Mac. The polling drops to one probe every 20 seconds once you've stopped touching anything, stops entirely while the companion is hidden, and stops for good if you untick **moods** in the panel (`moodsEnabled`). A browser on a site it doesn't recognise gets no prop rather than a wrong one.
+
+### The menu-bar panel
+
+The panel now **sizes its window to its own card**. It used to live in a fixed 620 px window: as soon as the card grew past it — the agents tab, a review with diffs — the bottom was cut off mid-pixel and both rounded corners went with it, which is exactly the "it doesn't end properly" you'd notice first. The renderer measures the card's natural height (chrome plus the scrolling view's content) and the window follows, clamped to the screen with room left under it for the shadow; past that clamp the view scrolls inside the card instead, so the corners are always drawn. **work ↗** in the tab row launches the Sunflower Work app, and the footer's **quit** is a real button now: it stops every background agent, cancels the running errand, disposes the Sunflower-Code session, cuts the voice and closes the work window before the app exits — nothing is left running behind.
 
 ### Switching models — `sunflower-models`
 
@@ -145,13 +179,23 @@ The whole run is **observable live**: model turns stream token by token from Oll
 
 While an agent is queued or running, a small pixel-sunflower **agent orb** docks to the right edge of the screen. Hovering it expands a status pill whose text now follows the run's real activity (`turn 3/8 · read src/foo.ts`, `turn 5/8 · writing…`, `running: npm test…`, `command waiting for you`, `review ready`), and the spinning-ring animation only plays while something is actually happening — a model call in flight or a command executing — not for the whole life of the run. Dragging the orb up or down repositions it (the position is remembered across restarts); a plain click jumps straight to the panel's agents tab so you can review or approve.
 
-### Sunflower Work (experimental)
+### Sunflower Work — the errand runner and its app
 
-Sunflower can also drive your mouse and keyboard to finish a small computer errand — "archive the newsletters," "close all these tabs," "empty the trash" — instead of just answering or narrating a guide. It's off by default: turn it on from the tray menu (**Enable Sunflower Work (experimental)**, persisted as `sunflowerWorkEnabled`). Ask for something that reads as an errand rather than a question, and the model answers with a short acknowledgement plus an internal `[WORK: …]` marker (never shown or spoken) that hands the task to the work runner; ask with it still off and sunflower just tells you where to flip the switch.
+Sunflower can also drive your mouse and keyboard to finish a computer errand — "archive the newsletters," "close all these tabs," "empty the trash" — instead of just answering or narrating a guide. It's off by default: turn it on from the tray menu (**Enable Sunflower Work**), from the panel's *sunflower work* section, or from the work app itself (persisted as `sunflowerWorkEnabled`). Ask for something that reads as an errand rather than a question, and the model answers with a short acknowledgement plus an internal `[WORK: …]` marker (never shown or spoken) that hands the task to the work runner; `/work <chore>` at the CLI does the same thing directly; ask with it still off and sunflower just tells you where to flip the switch.
 
-Nothing is touched while you're at the keyboard. The runner watches the same global input hook as the push-to-talk hotkey, requires **20 seconds of real idle** before its first move, gives up quietly if you haven't stepped away within 2 minutes, and — the instant it sees a real keystroke, mouse movement, or the push-to-talk hotkey — aborts on the spot ("you came back — hands off, all yours"). It's macOS-only, and refuses to start at all without the Accessibility permission that input hook depends on, rather than drive blind.
+**The work app.** Clicking **work ↗** in the menu-bar panel (or *open Sunflower Work…* in the tray) launches a dedicated window — a real window, not an overlay, and excluded from sunflower's own screen captures so a run never ends up commenting on its own interface. Three columns:
 
-Once you're away it loops: screenshot → one turn of the local vision model, constrained to reply with exactly one JSON action (`click`, `double-click`, `type`, `key`, `wait`, or `done` to end the run) → a real CGEvent/System Events call via `osascript` (no extra dependency) → a 1.5–2.5 second settle pause → repeat, feeding the model a running log of what it's already done. It's bounded on every side — 25 steps max, 90 seconds per model turn, an 8-minute total budget, and it gives up if the model answers off-format more than twice — and its own synthetic input is tagged so the presence guard doesn't mistake it for you coming back. Progress narrates on the status island (`looking at the screen (step 3)…`, each step's short reasoning) and ends with a system notification saying done, stopped, or failed; flipping the tray toggle off cancels any run in progress immediately. The prompt keeps it conservative by design: never open an app it can't see on screen, never touch system settings, never type a password.
+- **left** — create a run, and the list of every agent with its live state (`queued`, `waiting for you to leave`, `running`, `done`, `stopped`, `failed`) and step count;
+- **middle** — the selected run's **tool calls** (every gesture: what, where, why, when, grouped by context window) and its **terminal** (the same log the CLI prints, timestamped and colour-coded);
+- **right** — a **chatbox** that reaches the running agent, and the limits (idle before the first move, time budget, steps per run).
+
+**It renews its own terminal.** This is what lets a run last hours on a local model. Each context window is capped in tokens and steps; when one fills up, the runner closes it, writes a handoff summary of the last steps, **unloads the Ollama runner so its accumulated state is actually discarded**, and opens a fresh window that starts from that summary. The work app shows the seams (`terminal 2 · 4 800 tokens`) instead of hiding them. The time budget defaults to 2 hours and can be set to *no limit*.
+
+**The chatbox is not decoration.** Anything you write while a run is in flight is handed to the model on its next turn, above its own plan — "actually, skip the promos" lands before the next click.
+
+Nothing is touched while you're at the keyboard, and none of the above changes that. The runner watches the same global input hook as the push-to-talk hotkey, requires **real idle** before its first move (20 s by default, adjustable in the work app), gives up quietly if you haven't stepped away within 2 minutes, and — the instant it sees a real keystroke, mouse movement, or the push-to-talk hotkey — aborts on the spot ("you came back — hands off, all yours"). It's macOS-only, and refuses to start at all without the Accessibility permission that input hook depends on, rather than drive blind.
+
+Once you're away it loops: screenshot → one turn of the local vision model, constrained to reply with exactly one JSON action (`click`, `double-click`, `type`, `key`, `wait`, or `done` to end the run) → a real CGEvent/System Events call via `osascript` (no extra dependency) → a 1.5–2.5 second settle pause → repeat, feeding the model a running log of what it's already done. Scrolling goes through `key` (`pagedown` / `pageup`): a reliable synthetic scroll wheel would mean a native binary, a key press works everywhere and is just as cancellable. It stays bounded on every side — the step and time budgets above, 90 seconds per model turn, and it gives up if the model answers off-format three times in a row — and its own synthetic input is tagged so the presence guard doesn't mistake it for you coming back. Several errands can be queued; they run one at a time, because they share one mouse. Progress narrates on the status island (`looking at the screen (step 3)…`, each step's short reasoning) and ends with a system notification saying done, stopped, or failed; flipping the toggle off cancels any run in progress immediately. The prompt keeps it conservative by design: never open an app it can't see on screen, never touch system settings, never type a password.
 
 ### Diagnostics: the watchdog
 

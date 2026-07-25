@@ -24,6 +24,7 @@ import {
 } from "node:fs";
 import path from "node:path";
 import { checkOllama, createThinkStripper, ollamaHost } from "../ollama";
+import { blockedReason } from "../shell-guard";
 import type {
   AgentCommandDecision,
   AgentCommandRecord,
@@ -46,7 +47,6 @@ const TURN_TIMEOUT_MS = 300_000; // premier token (chargement à froid possible)
 const INTER_CHUNK_TIMEOUT_MS = 60_000; // silence entre paquets streamés
 const TOKEN_FLUSH_MS = 100; // regroupe les tokens avant l'IPC (pas 1 event/token)
 const COMMAND_TIMEOUT_MS = 120_000; // par commande approuvée
-const MAX_COMMAND_LENGTH = 400; // au-delà, refus d'office
 const MAX_COMMAND_OUTPUT = 64_000; // sortie gardée sur le record (UI)
 const MAX_COMMAND_FEEDBACK = 4_000; // queue de sortie renvoyée au modèle
 const MAX_OUTPUT_EVENT = 2_000; // borne d'un paquet command-output IPC
@@ -116,46 +116,6 @@ function parseRun(text: string): string | null {
   RUN_LINE_RE.lastIndex = 0;
   const m = RUN_LINE_RE.exec(text);
   return m?.[1]?.trim() || null;
-}
-
-// ---- Liste noire des commandes -------------------------------------------
-// Best effort assumé (un shell reste un shell) : le vrai garde-fou est le
-// clic humain obligatoire par commande. Cette liste refuse d'office, sans
-// même proposer le clic, les motifs destructeurs évidents.
-const BLOCKED_COMMANDS: { re: RegExp; why: string }[] = [
-  { re: /\b(sudo|doas)\b/i, why: "privilege escalation" },
-  {
-    // rm avec un drapeau récursif ET un drapeau force dans le même segment,
-    // quel que soit l'ordre ou la forme (-rf, -fr, -r -f, --recursive --force).
-    re: /\brm\b(?=[^|;&]*\s(-[a-zA-Z]*[rR]|--recursive\b))(?=[^|;&]*\s(-[a-zA-Z]*f|--force\b))/,
-    why: "recursive force delete",
-  },
-  { re: /\brm\b[^|;&]*\s(\/|~\/?)([ \t]|$)/, why: "delete at / or ~" },
-  { re: /\bgit\s+push\b[^|;&]*\s(-f|--force(-with-lease)?)\b/i, why: "force push" },
-  { re: /\bgit\s+reset\b[^|;&]*\s--hard\b/i, why: "git reset --hard" },
-  { re: /\bgit\s+clean\b[^|;&]*\s-[a-zA-Z]*[fx]/i, why: "git clean -f/-x" },
-  { re: /\bgit\s+checkout\b[^|;&]*\s(--\s*\.|\.)([ \t]|$)/, why: "checkout over local changes" },
-  {
-    re: /\b(curl|wget)\b[^|;&]*\|[^|;&]*\b(ba|z|da|fi|c|k)?sh\b/i,
-    why: "piping a download into a shell",
-  },
-  { re: /(>|>>)[ \t]*\/dev\/(?!null\b|stdout\b|stderr\b|tty\b)/, why: "writing to a device" },
-  { re: /\bdd\b[^|;&]*\bof=/i, why: "raw disk write (dd)" },
-  { re: /\b(mkfs|fdisk|parted|diskutil|newfs)\b/i, why: "disk formatting/partitioning" },
-  { re: /\b(shutdown|reboot|halt|poweroff)\b/i, why: "system power control" },
-  { re: /\bkill(all)?\b[^|;&]*\s-9\s+-?1\b/, why: "killing all processes" },
-  { re: /:\s*\(\s*\)\s*\{/, why: "fork bomb" },
-  { re: /\bchmod\b[^|;&]*\s(-[a-zA-Z]*R[a-zA-Z]*\s[^|;&]*)?\/([ \t]|$)/, why: "chmod on /" },
-  { re: /\blaunchctl\b|\bsystemctl\b/i, why: "system service control" },
-];
-
-/** Motif destructeur détecté (ou commande hors gabarit) ; null si acceptable. */
-function blockedReason(command: string): string | null {
-  if (command.length > MAX_COMMAND_LENGTH) return "command too long";
-  for (const { re, why } of BLOCKED_COMMANDS) {
-    if (re.test(command)) return why;
-  }
-  return null;
 }
 
 // ---- Sécurité chemins ----------------------------------------------------

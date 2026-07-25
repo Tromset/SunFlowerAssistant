@@ -3,12 +3,15 @@ import { ensureBridge } from "../shared/dev-stub";
 import {
   BEE,
   CODING,
+  MOOD_ART,
   POSES,
   READING,
   WORKING,
   pixelArtSvg,
   type PixelArt,
 } from "../../shared/sunflower-pixels";
+import type { ActivityContext, ActivitySnapshot } from "../../shared/activity";
+import { ACTIVITY_CONTEXTS } from "../../shared/activity";
 import type { CompanionPose, StatePayload } from "../../shared/state";
 import { finish, initTts, pushText, stopTts } from "./tts";
 
@@ -85,23 +88,64 @@ function armAnimPause(pose: CompanionPose): void {
   }
 }
 
-function renderPose(pose: CompanionPose): void {
-  const art: PixelArt = POSE_ART[pose];
+/* ── Humeurs contextuelles ─────────────────────────────────────────────
+   Quand la fleur n'a RIEN à faire (pose idle), elle se donne un petit
+   accessoire selon l'app au premier plan : casque sur Spotify, popcorn devant
+   Netflix, plaid devant Figma… (voir shared/activity.ts et main/activity.ts).
+   Deux règles strictes :
+    - l'humeur ne s'affiche qu'à l'état idle. Dès qu'une session, un guide ou
+      un agent reprend la main, la pose gagne — l'accessoire ne masque jamais
+      un état réel ;
+    - comme les vignettes d'activité, tout est en CSS sous une classe portée
+      par #flower : hors de l'humeur, la classe part et l'animation s'arrête. */
+let mood: ActivityContext = "none";
+let pose: CompanionPose = "idle";
+
+/** L'art réellement affiché : l'humeur quand on est au repos, sinon la pose. */
+function currentArt(): PixelArt {
+  if (pose === "idle") {
+    const art = MOOD_ART[mood];
+    if (art) return art;
+  }
+  return POSE_ART[pose];
+}
+
+function render(): void {
+  const art = currentArt();
   const [vw, vh] = art.vb;
   flowerSvg.innerHTML = pixelArtSvg(
     art,
     Math.round(vw * SCALE),
     Math.round(vh * SCALE),
   );
-  flowerSvg.classList.toggle("sway", pose === "idle");
+  const moodOn = pose === "idle" && MOOD_ART[mood] !== null;
+  // Le balancement reste réservé au tournesol nu : une scène d'humeur a sa
+  // propre animation et n'a pas à tanguer en plus.
+  flowerSvg.classList.toggle("sway", pose === "idle" && !moodOn);
   // Les abeilles n'apparaissent (et ne s'animent) qu'en état « thinking ».
   flower.classList.toggle("thinking", pose === "thinking");
   // Vignettes d'activité : une seule classe active à la fois.
   for (const cls of ACTIVITY_CLASSES) {
-    flower.classList.toggle(cls, pose === cls);
+    flower.classList.toggle(cls, !moodOn && pose === cls);
   }
-  armAnimPause(pose);
+  // Humeurs : une seule classe `mood-*` active à la fois.
+  for (const cls of ACTIVITY_CONTEXTS) {
+    flower.classList.toggle(`mood-${cls}`, moodOn && mood === cls);
+  }
+  // Une humeur animée n'est pas du repos : ne pas geler ses animations.
+  armAnimPause(moodOn ? "answering" : pose);
 }
+
+function renderPose(next: CompanionPose): void {
+  pose = next;
+  render();
+}
+
+window.sunflower.onActivity((snapshot: ActivitySnapshot) => {
+  if (snapshot.context === mood) return;
+  mood = snapshot.context;
+  render();
+});
 
 window.sunflower.onState((payload: StatePayload) => {
   renderPose(payload.pose);

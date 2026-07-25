@@ -3,6 +3,8 @@
  * (SunFlower.dc.html, surfaces 1a/1c/1d/1e). Consumed as SVG on the renderer
  * side and rasterized to PNG on the main side (tray icon).
  */
+import type { ActivityContext } from "./activity";
+
 export interface PixelRect {
   x: number;
   y: number;
@@ -199,6 +201,262 @@ export const WORKING: PixelArt = {
       ],
     },
   ],
+};
+
+/* ── Humeurs contextuelles ─────────────────────────────────────────────
+   Le tournesol se donne un petit accessoire selon ce que l'utilisateur est
+   en train de faire (voir shared/activity.ts pour le classement et
+   main/activity.ts pour la détection) : casque quand ça écoute de la musique,
+   popcorn devant une vidéo, plaid devant Figma, téléphone sur Discord…
+   Mêmes règles que les vignettes ci-dessus : une couche `cls` par partie
+   animable, animations 100 % CSS scopées à la classe portée par #flower, donc
+   rien ne tourne hors de l'humeur concernée. viewBox 14×10. */
+
+/** Décale une liste de rects (les humeurs descendent la fleur d'un cran pour
+    lui poser quelque chose sur la tête). */
+function shift(rects: PixelRect[], dx: number, dy: number): PixelRect[] {
+  return rects.map((r) => ({ ...r, x: r.x + dx, y: r.y + dy }));
+}
+
+/** Fleur descendue d'un cran : la tête occupe y1..y5, la tige y6..y9. */
+const BASE_DOWN = shift(BASE, 0, 1);
+
+/** « music » : petit casque sur la tête, deux notes qui s'envolent. */
+export const MOOD_MUSIC: PixelArt = {
+  vb: [14, 10],
+  layers: [
+    { rects: BASE_DOWN },
+    // Arceau + oreillettes.
+    {
+      rects: [
+        { x: 2, y: 0, w: 4, h: 1, c: DK }, // arceau
+        { x: 1, y: 1, w: 1, h: 1, c: DK }, // branche gauche
+        { x: 6, y: 1, w: 1, h: 1, c: DK }, // branche droite
+        { x: 0, y: 2, w: 1, h: 3, c: DK }, // oreillette gauche
+        { x: 7, y: 2, w: 1, h: 3, c: DK }, // oreillette droite
+        { x: 0, y: 3, w: 1, h: 1, c: O }, // coussinet
+        { x: 7, y: 3, w: 1, h: 1, c: O }, // coussinet
+      ],
+    },
+    // Deux croches qui montent (animées séparément pour se décaler).
+    {
+      cls: "sf-note-1",
+      rects: [
+        { x: 10, y: 4, w: 2, h: 1, c: O }, // tête
+        { x: 11, y: 1, w: 1, h: 3, c: O }, // hampe
+        { x: 12, y: 1, w: 1, h: 1, c: O }, // crochet
+      ],
+    },
+    {
+      cls: "sf-note-2",
+      rects: [
+        { x: 9, y: 8, w: 1, h: 1, c: Y }, // tête
+        { x: 10, y: 6, w: 1, h: 3, c: Y }, // hampe (jusqu'au niveau de la tête)
+      ],
+    },
+  ],
+};
+
+/** « ai » : le tournesol brandit une pancarte « AI » (lettres pixel de 4
+    rangées — il en faut quatre pour que le A garde son trou — dans un cadre
+    crème), agitée doucement. */
+export const MOOD_AI: PixelArt = {
+  vb: [14, 10],
+  layers: [
+    { rects: BASE_DOWN },
+    // Manche de la pancarte.
+    { rects: [{ x: 10, y: 6, w: 1, h: 3, c: B }] },
+    {
+      cls: "sf-sign",
+      rects: [
+        // Panneau 7×6 : il faut ces sept colonnes pour caser A + espace + I
+        // avec une marge de chaque côté — collées, les lettres redeviennent
+        // une tache. Son bord gauche mord d'un pixel sur la fleur : la
+        // pancarte est tenue DEVANT, c'est ce qu'on veut.
+        { x: 7, y: 0, w: 7, h: 6, c: HL },
+        // « A » : barre haute, flancs, barre transversale, jambes.
+        { x: 8, y: 1, w: 3, h: 1, c: BK },
+        { x: 8, y: 2, w: 1, h: 1, c: BK },
+        { x: 10, y: 2, w: 1, h: 1, c: BK },
+        { x: 8, y: 3, w: 3, h: 1, c: BK },
+        { x: 8, y: 4, w: 1, h: 1, c: BK },
+        { x: 10, y: 4, w: 1, h: 1, c: BK },
+        // « I », séparé du A par une colonne vide.
+        { x: 12, y: 1, w: 1, h: 4, c: BK },
+      ],
+    },
+  ],
+};
+
+/** « streaming » : seau de popcorn rayé, un grain saute. */
+export const MOOD_STREAMING: PixelArt = {
+  vb: [14, 10],
+  layers: [
+    { rects: BASE_DOWN },
+    // Grains qui dépassent du seau.
+    {
+      rects: [
+        { x: 9, y: 4, w: 1, h: 1, c: HL },
+        { x: 10, y: 3, w: 1, h: 1, c: Y },
+        { x: 11, y: 4, w: 1, h: 1, c: HL },
+        { x: 12, y: 3, w: 1, h: 1, c: HL },
+        { x: 13, y: 4, w: 1, h: 1, c: Y },
+      ],
+    },
+    // Seau rayé clay / crème.
+    {
+      rects: [
+        { x: 9, y: 5, w: 1, h: 5, c: O },
+        { x: 10, y: 5, w: 1, h: 5, c: HL },
+        { x: 11, y: 5, w: 1, h: 5, c: O },
+        { x: 12, y: 5, w: 1, h: 5, c: HL },
+        { x: 13, y: 5, w: 1, h: 5, c: O },
+        { x: 9, y: 5, w: 5, h: 1, c: HL }, // rebord
+      ],
+    },
+    // Le grain qui saute (animé en CSS).
+    { cls: "sf-pop", rects: [{ x: 11, y: 2, w: 1, h: 1, c: Y }] },
+  ],
+};
+
+/** « creative » : tournesol courbé sous un plaid, face à un écran qui
+    scintille (Figma, Premiere…). */
+export const MOOD_CREATIVE: PixelArt = {
+  vb: [14, 10],
+  layers: [
+    // Fleur penchée vers l'écran.
+    { transform: "rotate(10 4 10)", rects: BASE_DOWN },
+    // Plaid à carreaux posé sur les épaules : fond brun, carreaux clay. Un
+    // fond clay avec des carreaux crème donnait une nappe de pique-nique.
+    {
+      rects: [
+        { x: 1, y: 5, w: 6, h: 4, c: B },
+        { x: 2, y: 5, w: 1, h: 1, c: O },
+        { x: 4, y: 5, w: 1, h: 1, c: O },
+        { x: 6, y: 5, w: 1, h: 1, c: O },
+        { x: 1, y: 6, w: 1, h: 1, c: O },
+        { x: 3, y: 6, w: 1, h: 1, c: O },
+        { x: 5, y: 6, w: 1, h: 1, c: O },
+        { x: 2, y: 7, w: 1, h: 1, c: O },
+        { x: 4, y: 7, w: 1, h: 1, c: O },
+        { x: 6, y: 7, w: 1, h: 1, c: O },
+        { x: 1, y: 8, w: 1, h: 1, c: O },
+        { x: 3, y: 8, w: 1, h: 1, c: O },
+        { x: 5, y: 8, w: 1, h: 1, c: O },
+      ],
+    },
+    // L'écran, sur son pied.
+    {
+      rects: [
+        { x: 8, y: 2, w: 6, h: 5, c: DK }, // cadre
+        { x: 9, y: 3, w: 4, h: 3, c: BK }, // dalle
+        { x: 9, y: 3, w: 2, h: 1, c: O }, // calque
+        { x: 9, y: 4, w: 1, h: 1, c: Y }, // calque
+        { x: 11, y: 5, w: 2, h: 1, c: G1 }, // calque
+        { x: 10, y: 7, w: 2, h: 1, c: DK }, // pied
+        { x: 9, y: 8, w: 4, h: 1, c: DK }, // socle
+      ],
+    },
+    // Halo de l'écran (opacité modulée en CSS).
+    { cls: "sf-screen", rects: [{ x: 9, y: 3, w: 4, h: 3, c: HL }] },
+  ],
+};
+
+/** Téléphone pixel réutilisé par « messaging » et « doomscroll ». */
+function phoneRects(x: number, y: number): PixelRect[] {
+  return [
+    { x, y, w: 4, h: 6, c: DK }, // châssis
+    { x: x + 1, y: y + 1, w: 2, h: 4, c: BK }, // dalle
+  ];
+}
+
+/** « messaging » : téléphone en main, petites bulles qui s'envolent. */
+export const MOOD_MESSAGING: PixelArt = {
+  vb: [14, 10],
+  layers: [
+    { rects: BASE_DOWN },
+    // Le téléphone, écran allumé.
+    {
+      rects: [
+        ...phoneRects(8, 4),
+        { x: 9, y: 5, w: 2, h: 1, c: HL }, // ligne de message
+        { x: 9, y: 7, w: 1, h: 1, c: Y }, // ligne de message
+      ],
+    },
+    // Bulles qui montent (animées séparément).
+    {
+      cls: "sf-msg-1",
+      rects: [
+        { x: 12, y: 2, w: 2, h: 2, c: O },
+        { x: 12, y: 4, w: 1, h: 1, c: O }, // pointe
+      ],
+    },
+    {
+      cls: "sf-msg-2",
+      rects: [{ x: 12, y: 6, w: 1, h: 1, c: HL }],
+    },
+  ],
+};
+
+/** « doomscroll » : tournesol affalé, deux pétales tombés, téléphone collé
+    au visage et petit « zzz » — la version fatiguée. */
+export const MOOD_DOOMSCROLL: PixelArt = {
+  vb: [14, 10],
+  layers: [
+    // Fleur nettement courbée, pétales du haut fanés (brun).
+    // 12° et pas plus : au-delà, la tête part si loin sur la droite que la
+    // fleur a l'air cassée plutôt qu'avachie.
+    {
+      transform: "rotate(12 4 10)",
+      rects: [
+        // Le bloc de pétales du haut (y1..y2) est retiré puis repeint en brun :
+        // il couvre DEUX rangées, sinon il resterait un trou en y2.
+        ...BASE_DOWN.filter((r) => !(r.y === 1 && r.c === Y)),
+        { x: 2, y: 1, w: 4, h: 2, c: B }, // pétales fanés
+      ],
+    },
+    // Deux pétales tombés au sol.
+    {
+      rects: [
+        { x: 1, y: 9, w: 1, h: 1, c: Y },
+        { x: 6, y: 9, w: 1, h: 1, c: B },
+      ],
+    },
+    // Le téléphone, tenu tout près, écran blafard.
+    {
+      rects: [
+        ...phoneRects(7, 3),
+        { x: 8, y: 4, w: 2, h: 1, c: HL },
+        { x: 8, y: 6, w: 2, h: 1, c: HL },
+      ],
+    },
+    // Lueur du téléphone sur le visage (pulsation lente).
+    { cls: "sf-doom-glow", rects: [{ x: 8, y: 4, w: 2, h: 4, c: HL }] },
+    // Un « z » de sommeil. Trois colonnes, pas deux : sur deux, la diagonale
+    // n'a pas où passer et la lettre se lit « c ».
+    {
+      cls: "sf-zzz",
+      rects: [
+        { x: 11, y: 0, w: 3, h: 1, c: HL },
+        { x: 12, y: 1, w: 1, h: 1, c: HL },
+        { x: 11, y: 2, w: 3, h: 1, c: HL },
+      ],
+    },
+  ],
+};
+
+/** Humeur → scène. « none » n'a pas de scène : le tournesol reste au naturel
+    (POSES.idle). « coding » réutilise la vignette du portable, déjà dessinée
+    pour les agents — même geste, même dessin. */
+export const MOOD_ART: Record<ActivityContext, PixelArt | null> = {
+  none: null,
+  music: MOOD_MUSIC,
+  coding: CODING,
+  ai: MOOD_AI,
+  streaming: MOOD_STREAMING,
+  creative: MOOD_CREATIVE,
+  messaging: MOOD_MESSAGING,
+  doomscroll: MOOD_DOOMSCROLL,
 };
 
 /** Petite abeille pixel (animation « thinking » du companion) : corps rayé

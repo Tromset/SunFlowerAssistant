@@ -2,6 +2,8 @@
 // In Electron, the preload provides the real bridge.
 import type { SunflowerBridge } from "../../shared/ipc";
 import type { PanelData } from "../../shared/state";
+import { DEFAULT_CONFIG } from "../../shared/config-schema";
+import { WORK_SETTINGS_BOUNDS } from "../../shared/work";
 
 const SAMPLE: PanelData = {
   permissions: {
@@ -60,29 +62,8 @@ export function ensureBridge(): void {
     getStatus: () => Promise.resolve(SAMPLE),
     getPermissions: () => Promise.resolve(SAMPLE.permissions),
     requestPermission: () => Promise.resolve(),
-    getConfig: () =>
-      Promise.resolve({
-        onboarded: false,
-        ollamaHost: "http://localhost:11434",
-        ollamaModel: "qwen3-vl:8b",
-        whisperModel: "ggml-small-q5_1.bin",
-        screenCaptureConfirmed: true,
-        agentOrbY: 0.5,
-        companionMode: "follow" as const,
-        sunflowerWorkEnabled: false,
-      }),
-    setConfig: (patch) =>
-      Promise.resolve({
-        onboarded: false,
-        ollamaHost: "http://localhost:11434",
-        ollamaModel: "qwen3-vl:8b",
-        whisperModel: "ggml-small-q5_1.bin",
-        screenCaptureConfirmed: true,
-        agentOrbY: 0.5,
-        companionMode: "follow" as const,
-        sunflowerWorkEnabled: false,
-        ...patch,
-      }),
+    getConfig: () => Promise.resolve({ ...DEFAULT_CONFIG }),
+    setConfig: (patch) => Promise.resolve({ ...DEFAULT_CONFIG, ...patch }),
     downloadWhisper: () => Promise.resolve(),
     onboardingDone: () => Promise.resolve(),
     quit: () => Promise.resolve(),
@@ -114,6 +95,32 @@ export function ensureBridge(): void {
     onCompanionDocked: sub("companionDocked"),
     companionSetHover: () => {},
     companionToggleDock: () => Promise.resolve(),
+    onActivity: sub("activity"),
+    panelResize: () => {},
+    // Sunflower Work : la fenêtre dédiée ouverte dans un navigateur nu se
+    // contente d'une file vide — assez pour travailler la mise en page.
+    onWorkChanged: sub("workChanged"),
+    onWorkEvent: sub("workEvent"),
+    workOpen: () => Promise.resolve(),
+    workList: () => Promise.resolve([]),
+    workGet: () => Promise.resolve(null),
+    workStart: () => Promise.resolve(null),
+    workCancel: () => Promise.resolve(),
+    workChat: () => Promise.resolve(),
+    workSettingsGet: () =>
+      Promise.resolve({
+        enabled: false,
+        requiredIdleSec: WORK_SETTINGS_BOUNDS.requiredIdleSec.def,
+        budgetMin: WORK_SETTINGS_BOUNDS.budgetMin.def,
+        maxSteps: WORK_SETTINGS_BOUNDS.maxSteps.def,
+      }),
+    workSettingsSet: () =>
+      Promise.resolve({
+        enabled: false,
+        requiredIdleSec: WORK_SETTINGS_BOUNDS.requiredIdleSec.def,
+        budgetMin: WORK_SETTINGS_BOUNDS.budgetMin.def,
+        maxSteps: WORK_SETTINGS_BOUNDS.maxSteps.def,
+      }),
   };
   window.sunflower = stub;
 }
