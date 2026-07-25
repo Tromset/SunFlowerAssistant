@@ -2,6 +2,7 @@
 import { ensureBridge } from "../shared/dev-stub";
 import { POSES, pixelArtSvg } from "../../shared/sunflower-pixels";
 import { ACTIVITY_LABELS, type ActivitySnapshot } from "../../shared/activity";
+import { diffLines } from "../../shared/diff";
 import type { WorkSettings } from "../../shared/work";
 import type { PanelData, PermissionId } from "../../shared/state";
 import type {
@@ -115,6 +116,7 @@ voiceBadge.addEventListener("click", () => {
 const tabHome = document.getElementById("tab-home")!;
 const tabAgents = document.getElementById("tab-agents")!;
 const tabWork = document.getElementById("tab-work")!;
+const tabCode = document.getElementById("tab-code")!;
 const viewHome = document.getElementById("view-home")!;
 const viewAgents = document.getElementById("view-agents")!;
 function selectTab(agents: boolean): void {
@@ -126,9 +128,13 @@ function selectTab(agents: boolean): void {
 }
 tabHome.addEventListener("click", () => selectTab(false));
 tabAgents.addEventListener("click", () => selectTab(true));
-// « work » n'est pas un onglet : il lance l'app dédiée (fenêtre à part).
+// « work » et « code » ne sont pas des onglets : ils lancent chacun leur app
+// dédiée (fenêtre à part).
 tabWork.addEventListener("click", () => {
   void window.sunflower.workOpen();
+});
+tabCode.addEventListener("click", () => {
+  void window.sunflower.codeOpen();
 });
 
 // Le rond des agents demande d'ouvrir directement sur l'onglet agents.
@@ -610,88 +616,6 @@ function decideCommand(
   decision: AgentCommandDecision,
 ): void {
   void window.sunflower.agentCommand(id, commandId, decision);
-}
-
-// ---- Diff avant/après (LCS ligne à ligne, bornée) -----------------------
-interface DiffLine {
-  type: "same" | "add" | "del" | "skip";
-  text: string;
-}
-
-function splitLines(s: string): string[] {
-  const lines = s.split("\n");
-  if (lines[lines.length - 1] === "") lines.pop();
-  return lines;
-}
-
-const DIFF_MAX_LINES = 300;
-
-function diffLines(before: string | null, after: string): DiffLine[] {
-  const a = before === null ? [] : splitLines(before);
-  const b = splitLines(after);
-  if (a.length > DIFF_MAX_LINES || b.length > DIFF_MAX_LINES) {
-    // Trop gros pour un LCS confortable : avant tronqué puis après tronqué.
-    return [
-      ...a.slice(0, 60).map((text) => ({ type: "del" as const, text: `- ${text}` })),
-      { type: "skip", text: "··· file too large for a full diff ···" },
-      ...b.slice(0, 60).map((text) => ({ type: "add" as const, text: `+ ${text}` })),
-    ];
-  }
-  const n = a.length;
-  const m = b.length;
-  const dp: number[][] = Array.from({ length: n + 1 }, () =>
-    new Array<number>(m + 1).fill(0),
-  );
-  for (let i = n - 1; i >= 0; i--) {
-    for (let j = m - 1; j >= 0; j--) {
-      dp[i]![j] =
-        a[i] === b[j]
-          ? (dp[i + 1]![j + 1] ?? 0) + 1
-          : Math.max(dp[i + 1]![j] ?? 0, dp[i]![j + 1] ?? 0);
-    }
-  }
-  const raw: DiffLine[] = [];
-  let i = 0;
-  let j = 0;
-  while (i < n && j < m) {
-    if (a[i] === b[j]) {
-      raw.push({ type: "same", text: `  ${a[i]}` });
-      i++;
-      j++;
-    } else if ((dp[i + 1]![j] ?? 0) >= (dp[i]![j + 1] ?? 0)) {
-      raw.push({ type: "del", text: `- ${a[i]}` });
-      i++;
-    } else {
-      raw.push({ type: "add", text: `+ ${b[j]}` });
-      j++;
-    }
-  }
-  for (; i < n; i++) raw.push({ type: "del", text: `- ${a[i]}` });
-  for (; j < m; j++) raw.push({ type: "add", text: `+ ${b[j]}` });
-  // Ne garder que 2 lignes de contexte autour des changements.
-  const keep = new Array<boolean>(raw.length).fill(false);
-  raw.forEach((line, idx) => {
-    if (line.type === "same") return;
-    for (
-      let k = Math.max(0, idx - 2);
-      k <= Math.min(raw.length - 1, idx + 2);
-      k++
-    ) {
-      keep[k] = true;
-    }
-  });
-  const out: DiffLine[] = [];
-  let skipping = false;
-  raw.forEach((line, idx) => {
-    if (keep[idx]) {
-      out.push(line);
-      skipping = false;
-    } else if (!skipping) {
-      out.push({ type: "skip", text: "···" });
-      skipping = true;
-    }
-  });
-  return out;
 }
 
 // ---- Formulaire + abonnements -------------------------------------------

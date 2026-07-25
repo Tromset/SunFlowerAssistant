@@ -11,6 +11,15 @@
   box-sizing: border-box;
 }
 
+/* `hidden` veut dire caché, partout. La règle du navigateur pour [hidden] est
+   une règle d'agent utilisateur : n'IMPORTE quelle déclaration `display` de
+   notre côté la bat, quelle que soit la spécificité. Deux surfaces avaient
+   déjà rustiné le cas à la main (onboarding .step[hidden], companion
+   #step-badge[hidden]) — la troisième fois, on répare la classe de bug. */
+[hidden] {
+  display: none !important;
+}
+
 body {
   background: transparent;
   font-family: var(--font-serif);

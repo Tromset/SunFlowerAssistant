@@ -11,6 +11,7 @@
  *     refusé d'office.
  *
  *  Module de types partagé : ni electron, ni node. */
+import type { DiffLine } from "./diff";
 
 /** Modes de travail — même jeu que Ollama-Code. */
 export type CodeMode =
@@ -100,6 +101,77 @@ export type CodeGate =
   /** Refusé sans appel : le modèle reçoit le refus et continue sans. */
   | "deny";
 
+// ---- Les portes : ce que le niveau laisse passer --------------------------
+// Portées telles quelles depuis Ollama-Code. Vivaient dans
+// main/code/permissions.ts, mais elles n'importent que ce module : elles
+// descendent en partagé pour que l'app puisse afficher la VRAIE porte de
+// chaque outil au lieu de paraphraser la doc.
+//
+//   plan    lecture seule       write/execute refusés d'office
+//   normal  lecture libre       write/execute demandent un accord (défaut)
+//   yolo    tout part           rien ne demande rien
+//
+// Le MODE peut restreindre davantage mais jamais élargir : `plan` et `chat`
+// n'exposent au modèle que les outils qui n'écrivent rien, quel que soit le
+// niveau — un `yolo` en mode plan reste en lecture seule.
+
+/** Sort d'un outil sous un niveau donné. */
+export function gateFor(
+  permission: CodePermission,
+  tool: CodeToolName,
+): CodeGate {
+  const effect = CODE_TOOL_EFFECT[tool];
+  if (effect === "read") return "allow";
+  switch (permission) {
+    case "plan":
+      return "deny";
+    case "yolo":
+      return "allow";
+    case "normal":
+      return "ask";
+  }
+}
+
+/** Phrase montrée à l'utilisateur quand un outil est refusé d'office. */
+export function denyReason(
+  permission: CodePermission,
+  tool: CodeToolName,
+): string {
+  return `${tool} is a ${CODE_TOOL_EFFECT[tool]} tool and the permission level is "${permission}" — switch with /permission normal.`;
+}
+
+/** Outils réellement exposés au modèle pour un mode + un niveau donnés. */
+export function toolsFor(
+  mode: CodeMode,
+  permission: CodePermission,
+): CodeToolName[] {
+  if (mode === "chat") return [];
+  const readOnly = mode === "plan" || permission === "plan";
+  return CODE_TOOLS.filter(
+    (t) => !readOnly || CODE_TOOL_EFFECT[t] === "read",
+  );
+}
+
+// ---- Bornes du harnais ----------------------------------------------------
+// Exportées pour que les jauges de l'app aient le MÊME dénominateur que la
+// session : une constante recopiée dans un renderer dérive au premier réglage.
+
+/** Tours de modèle pour une seule requête utilisateur. */
+export const CODE_MAX_TURNS = 24;
+/** Au-delà, la session se compacte et repart d'une fenêtre neuve. */
+export const CODE_COMPACT_AT_TOKENS = 12_000;
+
+/** Un fichier écrit ou modifié par un appel d'outil, et ce qui a changé.
+ *  Seul le diff traverse l'IPC — jamais le contenu des fichiers. */
+export interface CodeFileChange {
+  /** Chemin relatif au dossier de projet. */
+  path: string;
+  added: number;
+  removed: number;
+  /** Déjà borné et élidé par shared/diff.ts. */
+  diff: DiffLine[];
+}
+
 /** Un appel d'outil demandé par le modèle, et ce qu'il est devenu. */
 export interface CodeToolCall {
   /** Index stable dans la session (identifiant de décision). */
@@ -116,6 +188,8 @@ export interface CodeToolCall {
   note?: string;
   /** Durée d'exécution en ms, une fois terminé. */
   ms?: number;
+  /** Ce que l'appel a écrit sur le disque (write_file / edit_file). */
+  changes?: CodeFileChange[];
 }
 
 /** Un tour de la conversation, tel que le CLI l'affiche. */
@@ -147,7 +221,8 @@ export type CodeEvent =
   | { kind: "tool"; call: CodeToolCall }
   /** Sortie brute d'une commande en cours (pseudo-terminal), pas du modèle. */
   | { kind: "output"; text: string }
-  /** Un outil attend l'accord : le CLI doit appeler approve(id, ok). */
+  /** Un outil attend l'accord : le terminal répond avec approve(ok), l'app
+   *  avec approve(ok, call.id) — deux surfaces, un seul accord en vol. */
   | { kind: "approval"; call: CodeToolCall }
   /** Le contexte a été renouvelé (compactage) — combien de tokens. */
   | { kind: "compacted"; tokens: number }
@@ -168,3 +243,59 @@ export interface CodeSessionInfo {
   /** Messages échangés (système exclu). */
   messages: number;
 }
+
+// ---- L'app dédiée ---------------------------------------------------------
+// La session diffuse des événements ; le terminal les imprime au fil de l'eau
+// et n'en garde rien. Une fenêtre, elle, s'ouvre TARD — souvent après qu'une
+// conversation entière s'est déroulée dans le terminal — et doit pouvoir
+// dessiner tout ce qui précède. D'où une transcription : ce que
+// `session.history()` ne peut pas rendre (il perd les appels d'outils, la
+// sortie brute des commandes, les compactages et le tour en vol).
+
+/** Une entrée de la transcription, dans l'ordre où elle est arrivée. */
+export type CodeEntry =
+  | { kind: "user"; at: number; text: string }
+  | {
+      kind: "answer";
+      at: number;
+      text: string;
+      turn: number;
+      maxTurns: number;
+    }
+  | { kind: "tool"; at: number; call: CodeToolCall }
+  /** Sortie brute d'une commande, rattachée à l'appel qui l'a produite. */
+  | { kind: "output"; at: number; callId: number; text: string }
+  | { kind: "compacted"; at: number; tokens: number }
+  | { kind: "error"; at: number; message: string }
+  /** Marque posée par nous, pas par le modèle : dossier changé, conversation
+   *  vidée. Le transcript dit POURQUOI il s'est vidé. */
+  | { kind: "note"; at: number; text: string };
+
+/** Instantané rendu à l'ouverture de la fenêtre. */
+export interface CodeAppState {
+  info: CodeSessionInfo;
+  entries: CodeEntry[];
+  /** Réponse en vol, token par token : une fenêtre ouverte EN PLEIN STREAM
+   *  rattrape le fil au lieu de commencer au milieu d'une phrase. */
+  draft: string;
+  /** Accord en attente, ou null. */
+  pending: CodeToolCall | null;
+  /** Compactages depuis le début de la conversation. */
+  renewals: number;
+}
+
+/** Événements diffusés à l'app. Un événement ne redessine que ce qu'il
+ *  touche — c'est la règle du renderer de Work, reprise telle quelle. */
+export type CodeAppEvent =
+  | { kind: "entry"; entry: CodeEntry }
+  | { kind: "token"; text: string }
+  /** Un appel déjà affiché change d'état (running → done / error). */
+  | { kind: "tool"; call: CodeToolCall }
+  /** Delta de sortie brute : s'ajoute au bloc de l'appel, pas une entrée neuve. */
+  | { kind: "output"; callId: number; text: string }
+  /** null : l'accord vient d'être tranché — éventuellement par le terminal. */
+  | { kind: "approval"; call: CodeToolCall | null }
+  | { kind: "info"; info: CodeSessionInfo; renewals: number }
+  /** La transcription est repartie de zéro (/clear, changement de dossier). */
+  | { kind: "reset" }
+  | { kind: "done" };

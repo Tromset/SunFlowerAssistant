@@ -7,6 +7,7 @@ import type {
   AgentDecision,
 } from "../shared/agents";
 import type { WorkSettings } from "../shared/work";
+import type { CodeMode, CodePermission } from "../shared/code";
 
 function on(
   channel: string,
@@ -95,6 +96,19 @@ const bridge: SunflowerBridge = {
   workSettingsGet: () => ipcRenderer.invoke(CH.workSettingsGet),
   workSettingsSet: (patch: Partial<WorkSettings>) =>
     ipcRenderer.invoke(CH.workSettingsSet, patch),
+  // Sunflower-Code : app dédiée, branchée sur la session du terminal.
+  onCodeEvent: (cb) => on(CH.codeEvent, cb as (...a: unknown[]) => void),
+  codeOpen: () => ipcRenderer.invoke(CH.codeOpen),
+  codeState: () => ipcRenderer.invoke(CH.codeState),
+  codeSend: (text: string) => ipcRenderer.invoke(CH.codeSend, text),
+  codeApprove: (callId: number, approved: boolean) =>
+    ipcRenderer.invoke(CH.codeApprove, callId, approved),
+  codeInterrupt: () => ipcRenderer.invoke(CH.codeInterrupt),
+  codeClear: () => ipcRenderer.invoke(CH.codeClear),
+  codeSetMode: (mode: CodeMode) => ipcRenderer.invoke(CH.codeSetMode, mode),
+  codeSetPermission: (permission: CodePermission) =>
+    ipcRenderer.invoke(CH.codeSetPermission, permission),
+  codePickWorkdir: () => ipcRenderer.invoke(CH.codePickWorkdir),
 };
 
 contextBridge.exposeInMainWorld("sunflower", bridge);
