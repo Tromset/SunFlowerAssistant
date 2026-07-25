@@ -139,6 +139,7 @@ const SLASH_HELP: [string, string][] = [
   ["/mode <ask|code|chat|vision|plan>", "who answers what you type"],
   ["/permission <plan|normal|yolo>", "what sunflower-code may do on its own"],
   ["/cd <folder>", "sunflower-code's project folder"],
+  ["/code", "open the sunflower-code app"],
   ["/model [name]", "show or switch the local model"],
   ["/status", "the status card again"],
   ["/clear", "forget the conversation and clear the screen"],

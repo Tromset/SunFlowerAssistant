@@ -105,6 +105,10 @@ export interface CodeToolContext {
   signal: AbortSignal;
   /** Sortie streamée d'une commande (pseudo-terminal du CLI). */
   onOutput?(text: string): void;
+  /** Un fichier vient d'être écrit. `before` vaut null pour une création.
+   *  Seuls write_file et edit_file le signalent ; le contrat de run() ne
+   *  bouge pas, l'app en tire un diff et le CLI l'ignore. */
+  onChange?(relPath: string, before: string | null, after: string): void;
 }
 
 export interface CodeToolDef {
@@ -190,8 +194,12 @@ const writeFile: CodeToolDef = {
       throw new ToolError(`refused: ${content.length} bytes is too much for one file.`);
     }
     const existed = existsSync(abs);
+    // Relu AVANT d'écrire : c'est la seule fenêtre où l'ancien contenu existe
+    // encore, et c'est ce qui permet à l'app de montrer un vrai diff.
+    const before = existed ? readFileSync(abs, "utf8") : null;
     mkdirSync(path.dirname(abs), { recursive: true });
     writeFileSync(abs, content);
+    ctx.onChange?.(rel(ctx.workdir, abs), before, content);
     return `${existed ? "overwrote" : "created"} ${rel(ctx.workdir, abs)} (${content.length} bytes)`;
   },
 };
@@ -223,6 +231,7 @@ const editFile: CodeToolDef = {
     }
     const after = before.slice(0, first) + newText + before.slice(first + oldText.length);
     writeFileSync(abs, after);
+    ctx.onChange?.(rel(ctx.workdir, abs), before, after);
     const delta = after.split("\n").length - before.split("\n").length;
     return `edited ${rel(ctx.workdir, abs)} (${delta >= 0 ? "+" : ""}${delta} lines)`;
   },

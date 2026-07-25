@@ -14,6 +14,12 @@ import type {
 } from "./agents";
 import type { ActivitySnapshot } from "./activity";
 import type {
+  CodeAppEvent,
+  CodeAppState,
+  CodeMode,
+  CodePermission,
+} from "./code";
+import type {
   WorkEvent,
   WorkSession,
   WorkSessionSummary,
@@ -49,6 +55,9 @@ export const CH = {
   // Sunflower Work : liste des sessions et flux d'événements du run en cours.
   workChanged: "sf:work:changed",
   workEvent: "sf:work:event",
+  // Sunflower-Code : flux du harnais vers son app dédiée. La session est UNE,
+  // partagée avec le terminal.
+  codeEvent: "sf:code:event",
   // renderer → main (send)
   micData: "sf:mic-data",
   micError: "sf:mic-error",
@@ -96,6 +105,17 @@ export const CH = {
   workChat: "sf:work:chat",
   workSettingsGet: "sf:work:settings:get",
   workSettingsSet: "sf:work:settings:set",
+  // Sunflower-Code : l'app dédiée (fenêtre à part) et son pilotage. Tout tape
+  // dans la MÊME session que le terminal — d'où l'absence d'identifiant.
+  codeOpen: "sf:code:open",
+  codeState: "sf:code:state",
+  codeSend: "sf:code:send",
+  codeApprove: "sf:code:approve",
+  codeInterrupt: "sf:code:interrupt",
+  codeClear: "sf:code:clear",
+  codeSetMode: "sf:code:set-mode",
+  codeSetPermission: "sf:code:set-permission",
+  codePickWorkdir: "sf:code:pick-workdir",
 } as const;
 
 export interface MicDataPayload {
@@ -148,6 +168,8 @@ export interface SunflowerBridge {
   onWorkChanged(cb: (sessions: WorkSessionSummary[]) => void): Unsubscribe;
   /** Sunflower Work : événement fin du run (log, geste, chat, terminal). */
   onWorkEvent(cb: (ev: WorkEvent) => void): Unsubscribe;
+  /** Sunflower-Code : événement fin du harnais (token, outil, accord, info). */
+  onCodeEvent(cb: (ev: CodeAppEvent) => void): Unsubscribe;
   sendMicData(pcm: Float32Array, sampleRate: number): void;
   sendMicError(code: MicErrorCode): void;
   sendTtsEnded(): void;
@@ -209,6 +231,24 @@ export interface SunflowerBridge {
   workChat(id: string, text: string): Promise<void>;
   workSettingsGet(): Promise<WorkSettings>;
   workSettingsSet(patch: Partial<WorkSettings>): Promise<WorkSettings>;
+  // ---- Sunflower-Code (app dédiée) --------------------------------------
+  // Une seule session, la même que celle du terminal : aucune méthode ne
+  // prend d'identifiant, et ce qui est tapé ici sort aussi là-bas.
+  /** Ouvre (ou ramène au premier plan) la fenêtre Sunflower-Code. */
+  codeOpen(): Promise<void>;
+  /** Instantané complet : la fenêtre s'ouvre tard, souvent après coup. */
+  codeState(): Promise<CodeAppState>;
+  codeSend(text: string): Promise<void>;
+  /** Accord d'outil. `callId` désigne l'appel : un clic en retard sur un
+   *  accord déjà tranché (au terminal, par exemple) tombe dans le vide. */
+  codeApprove(callId: number, approved: boolean): Promise<void>;
+  codeInterrupt(): Promise<void>;
+  codeClear(): Promise<void>;
+  codeSetMode(mode: CodeMode): Promise<void>;
+  codeSetPermission(permission: CodePermission): Promise<void>;
+  /** Sélecteur de dossier natif (feuille attachée à la fenêtre) ; rend le
+   *  dossier retenu, ou null si annulé ou refusé. */
+  codePickWorkdir(): Promise<string | null>;
 }
 
 declare global {

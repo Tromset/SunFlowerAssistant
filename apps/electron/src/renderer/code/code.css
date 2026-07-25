@@ -1,0 +1,588 @@
+/* Sunflower-Code — le harnais de codage sorti du terminal.
+   Même noir-et-jaune que le reste de l'app (tokens partagés) et même chrome
+   que Work : trois colonnes, chacune défilable, rien qui bouge quand le flux
+   se remplit. Ce qui change, c'est ce que les colonnes disent — ici, ce que le
+   modèle a le DROIT de faire, ce qu'il dit, et ce qu'il a écrit. */
+html,
+body {
+  height: 100%;
+}
+body {
+  background: var(--ink);
+  color: var(--text-on-dark-soft);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* ---- Barre de titre (les boutons macOS vivent dans la zone glissable) ---- */
+#titlebar {
+  -webkit-app-region: drag;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px 12px 84px;
+  border-bottom: 1px solid var(--border-on-dark);
+  background: var(--ink-2);
+}
+#title-icon {
+  display: inline-flex;
+}
+.title-name {
+  font-size: 14.5px;
+  color: var(--cream);
+}
+.title-name em {
+  color: var(--yellow);
+  font-style: italic;
+}
+#title-note {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--text-on-dark-mute);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#title-dir {
+  -webkit-app-region: no-drag;
+  cursor: pointer;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#title-dir:hover {
+  color: var(--cream);
+  border-color: var(--border-yellow);
+}
+
+/* ---- Trois colonnes ---- */
+#layout {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr) 320px;
+}
+#col-session,
+#col-changes {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  gap: 1px;
+  background: var(--border-on-dark);
+}
+/* Le rail de gauche défile d'un bloc : les panneaux gardent leur hauteur
+   naturelle, sinon la liste des outils se fait rogner à trois lignes sur une
+   petite fenêtre — et un outil caché est exactement ce qu'on ne veut pas ici. */
+#col-session {
+  border-right: 1px solid var(--border-on-dark);
+  overflow-y: auto;
+  flex: 0 0 auto;
+}
+#col-changes {
+  border-left: 1px solid var(--border-on-dark);
+}
+/* Hauteur naturelle par défaut : un panneau qui rétrécit rogne son texte, et
+   ce rail explique ce que le modèle a le droit de faire — la phrase coupée en
+   deux, c'est justement celle qu'il ne faut pas couper. Le rail défile. */
+.pane {
+  background: var(--ink);
+  padding: 14px 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 0 0 auto;
+  min-height: 0;
+}
+.pane.grow {
+  flex: 1 1 auto;
+  overflow: hidden;
+}
+.pane-label {
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--text-on-dark-mute);
+}
+
+/* ---- Formulaires ---- */
+textarea {
+  font-family: inherit;
+  font-size: 12.5px;
+  color: var(--cream);
+  background: rgba(254, 249, 237, 0.05);
+  border: 1px solid var(--border-on-dark);
+  border-radius: 10px;
+  padding: 8px 10px;
+  resize: none;
+  outline: none;
+  width: 100%;
+}
+textarea::placeholder {
+  color: var(--text-on-dark-mute);
+}
+textarea:focus {
+  border-color: var(--border-yellow);
+}
+button {
+  font-family: inherit;
+  font-size: 12px;
+  border-radius: 999px;
+  border: none;
+  padding: 6px 14px;
+  cursor: pointer;
+  color: var(--ink);
+  background: var(--yellow);
+  align-self: flex-start;
+}
+button:hover {
+  background: var(--yellow-deep);
+}
+button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+button.ghost {
+  color: var(--text-on-dark-soft);
+  background: transparent;
+  border: 1px solid var(--border-on-dark);
+}
+button.ghost:hover {
+  color: var(--orange);
+  background: transparent;
+  border-color: var(--border-accent);
+}
+.fineprint {
+  font-size: 11px;
+  line-height: 1.55;
+  color: var(--text-on-dark-mute);
+}
+
+/* ---- Badges d'état ---- */
+.badge {
+  font-size: 10.5px;
+  border-radius: 999px;
+  padding: 2px 8px;
+  white-space: nowrap;
+  border: 1px solid var(--border-on-dark);
+  color: var(--text-on-dark-mute);
+  background: rgba(254, 249, 237, 0.04);
+}
+.badge.run {
+  color: var(--yellow);
+  background: rgba(252, 210, 50, 0.1);
+  border-color: rgba(252, 210, 50, 0.25);
+  /* Le « ça réfléchit » est une animation CSS et rien d'autre : pas de
+     minuteur dans ce renderer, jamais. Voir CLAUDE.md. */
+  animation: sfPulse 1.6s ease-in-out infinite;
+}
+.badge.wait {
+  color: var(--orange);
+  background: rgba(217, 119, 87, 0.1);
+  border-color: rgba(217, 119, 87, 0.28);
+}
+.badge.ok {
+  color: #8fd18f;
+  background: rgba(143, 209, 143, 0.1);
+  border-color: rgba(143, 209, 143, 0.28);
+}
+.badge.bad {
+  color: var(--orange);
+  background: rgba(217, 119, 87, 0.08);
+}
+
+/* ---- Colonne 1 : mode, permission, outils, jauges ---- */
+.choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.choice {
+  font-size: 11.5px;
+  padding: 4px 11px;
+  border-radius: 999px;
+  border: 1px solid var(--border-on-dark);
+  background: rgba(254, 249, 237, 0.04);
+  color: var(--text-on-dark-mute);
+  align-self: auto;
+}
+.choice:hover {
+  background: rgba(254, 249, 237, 0.08);
+  color: var(--cream);
+}
+.choice.selected {
+  background: rgba(252, 210, 50, 0.14);
+  border-color: var(--border-yellow);
+  color: var(--cream);
+}
+.choice.danger.selected {
+  background: rgba(217, 119, 87, 0.16);
+  border-color: var(--border-accent);
+}
+#tool-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.tool {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 0;
+}
+.tool.off {
+  opacity: 0.4;
+}
+.tool-name {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 11.5px;
+  color: var(--text-on-dark-soft);
+}
+.meter {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.meter-head {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--text-on-dark-mute);
+  font-variant-numeric: tabular-nums;
+}
+.bar {
+  display: block;
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(254, 249, 237, 0.08);
+  overflow: hidden;
+}
+.bar i {
+  display: block;
+  height: 100%;
+  width: 0;
+  border-radius: 999px;
+  background: var(--yellow);
+  transition: width var(--dur) var(--ease);
+}
+
+/* ---- Colonne 2 : la conversation ---- */
+#col-talk {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+}
+#detail-head {
+  padding: 16px 20px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+#detail-title {
+  font-size: 18px;
+  font-weight: var(--weight-text);
+  line-height: 1.35;
+  color: var(--cream);
+  letter-spacing: var(--tracking-tight);
+}
+#detail-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+#detail-clear {
+  margin-left: auto;
+}
+.tabs {
+  margin: 0 20px;
+  display: flex;
+  padding: 2px;
+  gap: 2px;
+  background: rgba(254, 249, 237, 0.06);
+  border: 1px solid var(--border-on-dark);
+  border-radius: 10px;
+  align-self: flex-start;
+}
+.tab {
+  font-size: 12px;
+  padding: 5px 14px;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-on-dark-mute);
+}
+.tab:hover {
+  background: transparent;
+  color: var(--cream);
+}
+.tab.active {
+  background: rgba(254, 249, 237, 0.12);
+  color: var(--cream);
+}
+.scroller {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px 20px 20px;
+}
+
+/* ---- Accord : épinglé, jamais défilable hors de l'écran ---- */
+#approval {
+  margin: 0 20px 10px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--border-accent);
+  background: rgba(217, 119, 87, 0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+#approval-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+#approval-what {
+  flex: 1;
+  min-width: 0;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 12px;
+  color: var(--cream);
+  overflow-wrap: anywhere;
+}
+#approval-diff {
+  max-height: 180px;
+  overflow-y: auto;
+}
+#approval-actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* ---- Transcription ---- */
+#transcript {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.msg {
+  max-width: 92%;
+  padding: 7px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  user-select: text;
+}
+.msg.user {
+  align-self: flex-end;
+  background: rgba(252, 210, 50, 0.14);
+  color: var(--cream);
+}
+.msg.sunflower {
+  align-self: flex-start;
+  background: rgba(254, 249, 237, 0.06);
+  color: var(--text-on-dark-soft);
+}
+.msg.streaming::after {
+  content: "▍";
+  color: var(--yellow);
+  animation: sfCaret 1s step-end infinite;
+}
+.rule {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0 2px;
+  font-size: 11px;
+  color: var(--yellow);
+}
+.rule::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: rgba(252, 210, 50, 0.25);
+}
+.entry-error {
+  font-size: 11.5px;
+  color: var(--orange);
+}
+.entry-note {
+  font-size: 11px;
+  font-style: italic;
+  color: var(--text-on-dark-mute);
+}
+
+/* ---- Appels d'outils ---- */
+#calls {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.call {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--border-on-dark);
+  background: rgba(254, 249, 237, 0.03);
+}
+.call.running {
+  border-color: var(--border-yellow);
+}
+.call.error,
+.call.refused,
+.call.denied {
+  border-color: var(--border-accent);
+}
+.call-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.call-mark {
+  font-size: 11px;
+  color: var(--orange);
+}
+.call.done .call-mark {
+  color: #8fd18f;
+}
+.call-name {
+  flex: 1;
+  min-width: 0;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 11.5px;
+  color: var(--cream);
+  overflow-wrap: anywhere;
+}
+.call-ms,
+.call-result {
+  font-size: 11px;
+  color: var(--text-on-dark-mute);
+  font-variant-numeric: tabular-nums;
+}
+.call-result {
+  overflow-wrap: anywhere;
+}
+.call-note {
+  font-size: 11px;
+  color: var(--orange);
+}
+.call details summary {
+  font-size: 11px;
+  color: var(--text-on-dark-mute);
+  cursor: pointer;
+}
+.call details summary:hover {
+  color: var(--cream);
+}
+.tally {
+  font-size: 10.5px;
+  color: #8fd18f;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* ---- Terminal ---- */
+.term {
+  margin: 0;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 11.5px;
+  line-height: 1.6;
+  background: #0d0c0b;
+  color: #d6d0c4;
+  white-space: pre-wrap;
+  word-break: break-word;
+  user-select: text;
+}
+/* La même sortie brute, mais rangée sous l'appel qui l'a produite. */
+.term.inline {
+  padding: 8px 10px;
+  border-radius: 10px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+/* ---- Composeur ---- */
+#composer {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  padding: 0 20px 16px;
+}
+#composer textarea {
+  flex: 1;
+}
+/* Aligné sur la dernière ligne de la zone de saisie : étiré, le bouton
+   devenait une grosse pastille jaune. */
+#composer button {
+  padding: 7px 14px;
+}
+
+/* ---- Colonne 3 : ce qui a changé ---- */
+#changes {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0;
+}
+.change {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--border-on-dark);
+  background: rgba(254, 249, 237, 0.03);
+}
+.change-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.change-path {
+  flex: 1;
+  min-width: 0;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 11.5px;
+  color: var(--cream);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  text-align: left;
+}
+
+/* ---- Diff ---- */
+.diff {
+  display: flex;
+  flex-direction: column;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  background: #0d0c0b;
+  border-radius: 8px;
+  padding: 6px 8px;
+  overflow-x: auto;
+  user-select: text;
+}
+.diff-line {
+  white-space: pre;
+  color: #d6d0c4;
+}
+.diff-line.add {
+  color: #8fd18f;
+}
+.diff-line.del {
+  color: var(--orange);
+}
+.diff-line.skip {
+  color: var(--text-on-dark-mute);
+}

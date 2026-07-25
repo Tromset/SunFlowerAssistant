@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="stylesheet" href="../shared/tokens/fonts.css" />
+    <link rel="stylesheet" href="../shared/tokens/colors.css" />
+    <link rel="stylesheet" href="../shared/tokens/typography.css" />
+    <link rel="stylesheet" href="../shared/tokens/spacing.css" />
+    <link rel="stylesheet" href="../shared/tokens/effects.css" />
+    <link rel="stylesheet" href="../shared/base.css" />
+    <link rel="stylesheet" href="./code.css" />
+  </head>
+  <body>
+    <header id="titlebar">
+      <span id="title-icon"></span>
+      <span class="title-name">sunflower <em>code</em></span>
+      <span id="title-note">idle</span>
+      <span id="title-dir" class="badge"></span>
+    </header>
+
+    <main id="layout">
+      <!-- ── Colonne 1 : ce que le modèle a le droit de faire ────── -->
+      <aside id="col-session">
+        <section class="pane">
+          <span class="pane-label">mode</span>
+          <div id="mode-list" class="choices"></div>
+          <p id="mode-help" class="fineprint"></p>
+        </section>
+
+        <section class="pane">
+          <span class="pane-label">permission</span>
+          <div id="permission-list" class="choices"></div>
+          <p id="permission-help" class="fineprint"></p>
+          <p class="fineprint">
+            the mode can restrict further but never widen: plan stays read-only
+            even under yolo, and chat has no tools at all.
+          </p>
+        </section>
+
+        <section class="pane">
+          <span class="pane-label">tools</span>
+          <div id="tool-list"></div>
+          <p class="fineprint">
+            every path is relative to the project folder — absolute paths, ..
+            and anything that looks like a secret are refused before opening.
+          </p>
+        </section>
+
+        <section class="pane">
+          <span class="pane-label">context</span>
+          <div class="meter">
+            <span class="meter-head">
+              <span>turns</span>
+              <span id="meter-turns-value">0/24</span>
+            </span>
+            <span class="bar"><i id="meter-turns"></i></span>
+          </div>
+          <div class="meter">
+            <span class="meter-head">
+              <span>tokens</span>
+              <span id="meter-tokens-value">0/12k</span>
+            </span>
+            <span class="bar"><i id="meter-tokens"></i></span>
+          </div>
+          <p id="renewals" class="fineprint">context renewed 0×</p>
+          <p class="fineprint">
+            past the budget the conversation is folded into a short local
+            summary and restarts from a fresh window — no extra model call.
+            that is what makes a long refactor survivable on an 8B model.
+          </p>
+        </section>
+      </aside>
+
+      <!-- ── Colonne 2 : la conversation ─────────────────────────── -->
+      <section id="col-talk">
+        <div id="detail-head">
+          <h1 id="detail-title">sunflower-code</h1>
+          <div id="detail-meta">
+            <span id="detail-status" class="badge off">idle</span>
+            <button id="detail-clear" type="button" class="ghost">clear</button>
+            <button id="detail-interrupt" type="button" class="ghost" hidden>
+              stop
+            </button>
+          </div>
+        </div>
+
+        <!-- Épinglé entre l'en-tête et la vue : un accord ne doit jamais
+             pouvoir défiler hors de l'écran. -->
+        <div id="approval" hidden>
+          <div id="approval-head">
+            <span id="approval-what"></span>
+            <span id="approval-effect" class="badge wait"></span>
+          </div>
+          <div id="approval-diff" class="diff" hidden></div>
+          <p class="fineprint">
+            sunflower-code wants to run this. nothing has touched the disk yet.
+          </p>
+          <div id="approval-actions">
+            <button id="approval-allow" type="button">allow</button>
+            <button id="approval-deny" type="button" class="ghost">deny</button>
+          </div>
+        </div>
+
+        <div class="tabs">
+          <button id="tab-talk" class="tab active" type="button">
+            conversation
+          </button>
+          <button id="tab-calls" class="tab" type="button">tool calls</button>
+          <button id="tab-term" class="tab" type="button">terminal</button>
+        </div>
+
+        <div id="view-talk" class="scroller">
+          <div id="transcript"></div>
+          <p id="talk-empty" class="fineprint">
+            nothing yet — ask for a change, or point it at a file.
+          </p>
+        </div>
+
+        <div id="view-calls" class="scroller" hidden>
+          <div id="calls"></div>
+          <p id="calls-empty" class="fineprint">no tool call yet.</p>
+        </div>
+
+        <pre id="view-term" class="scroller term" hidden></pre>
+
+        <div id="composer">
+          <textarea
+            id="composer-text"
+            rows="3"
+            spellcheck="false"
+            placeholder="what should it do? — “find where the panel sizes itself”, “add a test for the parser”…"
+          ></textarea>
+          <button id="composer-send" type="button">send</button>
+        </div>
+      </section>
+
+      <!-- ── Colonne 3 : ce qui a changé sur le disque ───────────── -->
+      <aside id="col-changes">
+        <section class="pane grow">
+          <span class="pane-label">changes</span>
+          <p id="changes-empty" class="fineprint">nothing written yet.</p>
+          <div id="changes" class="scroller"></div>
+        </section>
+        <section class="pane">
+          <p class="fineprint">
+            every write stays inside the project folder, and plan mode never
+            writes at all. under normal, each one waited for your allow.
+          </p>
+        </section>
+      </aside>
+    </main>
+    <script src="./code.js"></script>
+  </body>
+</html>

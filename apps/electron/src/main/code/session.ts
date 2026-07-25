@@ -1,8 +1,8 @@
 // Sunflower-Code — la boucle agentique, portée depuis Ollama-Code et branchée
 // sur le CLI de sunflower. Un tour = un appel au modèle local ; s'il demande
-// des outils, ils passent par la permission (permissions.ts), s'exécutent
-// (tools.ts), et leur résultat repart au modèle. On recommence jusqu'à une
-// réponse sans outil, ou jusqu'au plafond de tours.
+// des outils, ils passent par la permission (gateFor, dans shared/code.ts),
+// s'exécutent (tools.ts), et leur résultat repart au modèle. On recommence
+// jusqu'à une réponse sans outil, ou jusqu'au plafond de tours.
 //
 // Deux dialectes d'appel d'outil, parce que les petits modèles locaux ne sont
 // pas égaux devant le function-calling :
@@ -17,11 +17,17 @@
 // et repart d'une fenêtre neuve — c'est ce qui permet de coder longtemps avec
 // un modèle 8B.
 import { checkOllama, createThinkStripper, ollamaHost } from "../ollama";
-import { denyReason, gateFor, toolsFor } from "./permissions";
 import { TOOLS, ToolError, ollamaToolSpecs, toolProtocolHelp } from "./tools";
+import { diffLines, diffTally } from "../../shared/diff";
 import {
+  CODE_COMPACT_AT_TOKENS,
+  CODE_MAX_TURNS,
   CODE_TOOLS,
+  denyReason,
+  gateFor,
+  toolsFor,
   type CodeEvent,
+  type CodeFileChange,
   type CodeMessage,
   type CodeMode,
   type CodePermission,
@@ -32,8 +38,10 @@ import {
 } from "../../shared/code";
 
 // ---- Bornes --------------------------------------------------------------
-/** Tours de modèle par message utilisateur. */
-const MAX_TURNS = 24;
+// Les deux que l'app affiche en jauge vivent dans shared/code.ts, pour que le
+// dénominateur montré soit LE plafond réel et pas une copie qui dérive.
+const MAX_TURNS = CODE_MAX_TURNS;
+const COMPACT_AT_TOKENS = CODE_COMPACT_AT_TOKENS;
 /** Appels d'outils servis dans un même tour. */
 const MAX_CALLS_PER_TURN = 4;
 /** Premier token : le chargement à froid d'un modèle local prend son temps. */
@@ -43,8 +51,6 @@ const INTER_CHUNK_MS = 90_000;
 /** Fenêtre de contexte demandée à Ollama. */
 const NUM_CTX = 16_384;
 const NUM_PREDICT = 2048;
-/** Au-delà, la session se compacte et repart d'une fenêtre neuve. */
-const COMPACT_AT_TOKENS = 12_000;
 /** Résultat d'outil rendu au modèle (l'affichage en garde moins). */
 const MAX_TOOL_RESULT = 20_000;
 /** Résultat d'outil montré au CLI. */
@@ -311,8 +317,11 @@ export interface CodeSession {
    */
   send(message: string): Promise<void>;
   /** Réponse à l'événement `approval` en attente : exécuter ou refuser.
-   *  Un seul accord peut être en vol à la fois (un outil par tour). */
-  approve(approved: boolean): void;
+   *  Un seul accord peut être en vol à la fois (un outil par tour), mais deux
+   *  surfaces peuvent y répondre : le terminal appelle sans `callId` (il
+   *  répond à l'invite qu'il vient d'imprimer), l'app avec l'identifiant de
+   *  l'appel, pour qu'un clic en retard ne tranche pas l'accord suivant. */
+  approve(approved: boolean, callId?: number): void;
   /** Coupe le tour en vol ET la commande en cours. */
   interrupt(): void;
   /** Repart d'une conversation vierge (garde mode/permission/dossier). */
@@ -340,8 +349,12 @@ export function createCodeSession(deps: CodeSessionDeps): CodeSession {
   let callCounter = 0;
   let ctrl: AbortController | null = null;
   let disposed = false;
-  /** Résolveur de l'accord en attente (un seul à la fois par construction). */
-  let approvalWaiter: ((ok: boolean) => void) | null = null;
+  /** Accord en attente : un seul à la fois par construction, mais DEUX
+   *  surfaces peuvent y répondre (le terminal et l'app dédiée). L'identité de
+   *  l'appel voyage donc avec le résolveur, pour qu'un clic en retard sur un
+   *  accord déjà tranché tombe dans le vide au lieu de trancher le suivant. */
+  let approvalWaiter: { callId: number; resolve(ok: boolean): void } | null =
+    null;
 
   const emit = (ev: CodeEvent) => {
     if (!disposed) deps.onEvent(ev);
@@ -407,9 +420,12 @@ export function createCodeSession(deps: CodeSessionDeps): CodeSession {
       const approved = await new Promise<boolean>((resolve) => {
         const onAbort = () => resolve(false);
         signal.addEventListener("abort", onAbort, { once: true });
-        approvalWaiter = (ok) => {
-          signal.removeEventListener("abort", onAbort);
-          resolve(ok);
+        approvalWaiter = {
+          callId: call.id,
+          resolve: (ok) => {
+            signal.removeEventListener("abort", onAbort);
+            resolve(ok);
+          },
         };
       });
       approvalWaiter = null;
@@ -424,6 +440,7 @@ export function createCodeSession(deps: CodeSessionDeps): CodeSession {
     call.status = "running";
     emit({ kind: "tool", call });
     const t0 = Date.now();
+    const changes: CodeFileChange[] = [];
     try {
       const result = await def.run(args, {
         workdir,
@@ -431,9 +448,17 @@ export function createCodeSession(deps: CodeSessionDeps): CodeSession {
         // Sortie de commande : un canal à part, pour que le CLI ne la
         // maquille pas en prose du modèle.
         onOutput: (text) => emit({ kind: "output", text }),
+        // Ce qui a réellement changé sur le disque. Seul le diff est gardé —
+        // jamais le contenu des fichiers, qui n'a rien à faire dans une
+        // transcription ni sur un canal IPC.
+        onChange: (relPath, before, after) => {
+          const diff = diffLines(before, after);
+          changes.push({ path: relPath, ...diffTally(diff), diff });
+        },
       });
       call.status = "done";
       call.result = result.slice(0, MAX_TOOL_RESULT);
+      if (changes.length > 0) call.changes = changes;
     } catch (err) {
       call.status = "error";
       call.note =
@@ -580,16 +605,18 @@ export function createCodeSession(deps: CodeSessionDeps): CodeSession {
         setStatus("idle");
       }
     },
-    approve(approved) {
-      // Un seul accord en vol par construction (les outils s'exécutent l'un
-      // après l'autre) : une réponse tardive tombe simplement dans le vide.
-      if (!approvalWaiter) return;
-      const resolve = approvalWaiter;
+    approve(approved, callId) {
+      const waiter = approvalWaiter;
+      if (!waiter) return;
+      // Sans identifiant — le terminal, qui ne peut répondre qu'à l'invite
+      // qu'il vient d'imprimer — on accepte. Avec, il doit désigner l'accord
+      // en cours : un bouton cliqué trop tard ne tranche pas le suivant.
+      if (callId !== undefined && callId !== waiter.callId) return;
       approvalWaiter = null;
-      resolve(approved);
+      waiter.resolve(approved);
     },
     interrupt() {
-      approvalWaiter?.(false);
+      approvalWaiter?.resolve(false);
       approvalWaiter = null;
       ctrl?.abort();
     },
@@ -625,7 +652,7 @@ export function createCodeSession(deps: CodeSessionDeps): CodeSession {
     busy: () => ctrl !== null,
     dispose() {
       disposed = true;
-      approvalWaiter?.(false);
+      approvalWaiter?.resolve(false);
       approvalWaiter = null;
       ctrl?.abort();
       ctrl = null;

@@ -2,6 +2,7 @@ import {
   BrowserWindow,
   Notification,
   app,
+  dialog,
   ipcMain,
   nativeImage,
   screen,
@@ -17,7 +18,9 @@ import type {
 } from "../shared/agents";
 import type { ActivitySnapshot } from "../shared/activity";
 import {
+  CODE_MODES,
   CODE_PERMISSIONS,
+  type CodeAppEvent,
   type CodeMode,
   type CodePermission,
 } from "../shared/code";
@@ -29,6 +32,7 @@ import {
 import { createAgentRunner, type AgentRunner } from "./agents/runner";
 import { createActivityWatcher, type ActivityWatcher } from "./activity";
 import { createCodeSession, type CodeSession } from "./code/session";
+import { createCodeTranscript, type CodeTranscript } from "./code/transcript";
 import { createWorkStore } from "./work/store";
 import {
   openWorkWindow,
@@ -79,6 +83,11 @@ import {
   createCompanionWindow,
   type CompanionController,
 } from "./windows/companion";
+import {
+  codeWindow,
+  openCodeWindow,
+  releaseCodeWindow,
+} from "./windows/code";
 import { createIslandVisibility, createIslandWindow } from "./windows/island";
 import { createOnboardingWindow } from "./windows/onboarding";
 import { createPanelWindow, resizePanel, togglePanel } from "./windows/panel";
@@ -87,6 +96,11 @@ import {
   hidePointer,
   showPointerAt,
 } from "./windows/pointer";
+
+/** `sunflower code` : bin/sunflower.js traduit la sous-commande en ce
+ *  drapeau avant de le passer à Electron, plutôt que de nous laisser deviner
+ *  ce que veut dire un argument nu qui s'appelle « code ». */
+const OPEN_CODE_FLAG = "--open-code";
 
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
@@ -137,6 +151,10 @@ async function main(): Promise<void> {
   let activity: ActivityWatcher | null = null;
   let codeSession: CodeSession | null = null;
   let quitting = false;
+  /** Dossier de départ du harnais : le cwd du terminal qui a lancé l'app.
+   *  Suivi ici parce que la transcription est créée AVANT la session (les
+   *  handlers IPC passent en premier) et doit pouvoir répondre entre-temps. */
+  let codeWorkdir = process.cwd();
   /** Réévalue si le sondage d'humeur doit tourner. Remplacé une fois le
    *  compagnon et le guetteur créés ; en attendant, no-op (les handlers IPC
    *  sont enregistrés avant les fenêtres et peuvent déjà l'appeler). */
@@ -168,6 +186,78 @@ async function main(): Promise<void> {
   const workStore = createWorkStore((ev: WorkEvent) =>
     sendWork(CH.workEvent, ev),
   );
+
+  // ---- Sunflower-Code : la transcription de LA session ------------------
+  // Une seule session, partagée avec le terminal. La transcription est créée
+  // tôt, comme le registre de Work : les handlers IPC passent avant les
+  // fenêtres, et l'app peut demander son instantané dès son chargement.
+  // Une seule cible, contrairement à sendWork : le panneau n'affiche rien du
+  // harnais, et un flux de tokens envoyé à une fenêtre qui l'ignore, c'est du
+  // travail pour rien à chaque mot que le modèle écrit.
+  const sendCode = (channel: string, ...args: unknown[]) => {
+    sendTo(codeWindow(), channel, ...args);
+  };
+  const codeTranscript: CodeTranscript = createCodeTranscript({
+    info: () =>
+      codeSession?.info() ?? {
+        mode: getConfig().codeMode,
+        permission: getConfig().codePermission,
+        workdir: codeWorkdir,
+        status: "idle",
+        turns: 0,
+        tokens: 0,
+        messages: 0,
+      },
+    onEvent: (ev: CodeAppEvent) => sendCode(CH.codeEvent, ev),
+  });
+
+  /** Sélecteur de dossier natif. Attaché à la fenêtre Code quand elle existe :
+   *  sur macOS ça donne une FEUILLE, pas une boîte flottante au milieu de
+   *  l'écran. Le chemin ne quitte jamais le processus principal. */
+  const pickProjectFolder = async (): Promise<string | null> => {
+    const parent = codeWindow();
+    const opts: Electron.OpenDialogOptions = {
+      properties: ["openDirectory", "createDirectory"],
+      defaultPath: codeSession?.info().workdir ?? codeWorkdir,
+      message: "pick the project folder",
+    };
+    const res = parent
+      ? await dialog.showOpenDialog(parent, opts)
+      : await dialog.showOpenDialog(opts);
+    if (res.canceled) return null;
+    return res.filePaths[0] ?? null;
+  };
+
+  /**
+   * LA fonction demandée par le TODO : tout ce que l'utilisateur tape au CLI
+   * hors du mode « ask » part à Sunflower-Code. Un seul point de passage, donc
+   * un seul endroit à regarder pour savoir où va un message — et l'app dédiée
+   * passe par ici elle aussi, ce qui garde l'invariant vrai avec DEUX
+   * surfaces au lieu d'une.
+   */
+  const routeToCode = (message: string): void => {
+    if (!codeSession) {
+      tui.warn("sunflower-code isn't ready yet.");
+      return;
+    }
+    const text = message.trim();
+    if (!text) return;
+    // La session n'émet pas d'événement pour ce que l'utilisateur tape : sans
+    // cette ligne, une question posée au terminal n'existerait pas dans l'app.
+    codeTranscript.noteUser(text);
+    void codeSession.send(text);
+  };
+
+  /** Change le dossier de projet — même porte que `/cd`, depuis les deux
+   *  surfaces. Vide la conversation : c'est un autre projet. */
+  const setCodeWorkdir = (dir: string): boolean => {
+    if (!existsSync(dir) || !statSync(dir).isDirectory()) return false;
+    codeWorkdir = dir;
+    codeSession?.setWorkdir(dir);
+    codeTranscript.reset();
+    codeTranscript.note(`project folder is now ${dir} — fresh conversation.`);
+    return true;
+  };
   const workSettings = (): WorkSettings => {
     const cfg = getConfig();
     return {
@@ -312,6 +402,47 @@ async function main(): Promise<void> {
   ipcMain.handle(CH.workSettingsSet, (_e, patch: Partial<WorkSettings>) =>
     workRunner ? workRunner.setSettings(patch) : saveWorkSettings(patch),
   );
+  // ---- Sunflower-Code : app dédiée, branchée sur LA session -------------
+  // Aucune méthode ne prend d'identifiant de session : il n'y en a qu'une, et
+  // c'est celle du terminal. Ce qui est tapé ici ressort là-bas.
+  ipcMain.handle(CH.codeOpen, async () => {
+    await openCodeWindow();
+    // La fenêtre fraîchement ouverte part d'un état à jour.
+    codeTranscript.syncInfo();
+  });
+  ipcMain.handle(CH.codeState, () => codeTranscript.snapshot());
+  ipcMain.handle(CH.codeSend, (_e, text: string) => {
+    routeToCode(String(text));
+  });
+  ipcMain.handle(CH.codeApprove, (_e, callId: number, approved: boolean) => {
+    codeSession?.approve(Boolean(approved), Number(callId));
+  });
+  ipcMain.handle(CH.codeInterrupt, () => codeSession?.interrupt());
+  ipcMain.handle(CH.codeClear, () => {
+    codeSession?.clear();
+    codeTranscript.reset();
+    codeTranscript.note("conversation cleared.");
+  });
+  ipcMain.handle(CH.codeSetMode, (_e, mode: CodeMode) => {
+    if (!CODE_MODES.includes(mode)) return;
+    codeSession?.setMode(mode);
+    setConfig({ codeMode: mode });
+    // Le terminal et l'app partagent la session : son invite suit le mode
+    // choisi ici, exactement comme si /mode avait été tapé.
+    tui.setMode(mode);
+    codeTranscript.syncInfo();
+  });
+  ipcMain.handle(CH.codeSetPermission, (_e, permission: CodePermission) => {
+    if (!CODE_PERMISSIONS.includes(permission)) return;
+    codeSession?.setPermission(permission);
+    setConfig({ codePermission: permission });
+    codeTranscript.syncInfo();
+  });
+  ipcMain.handle(CH.codePickWorkdir, async () => {
+    const dir = await pickProjectFolder();
+    if (!dir) return null;
+    return setCodeWorkdir(dir) ? dir : null;
+  });
   // Agents de code : toute écriture disque passe par agentDecide (accept),
   // toute exécution de commande par agentCommand (approve) — jamais sans clic.
   ipcMain.handle(CH.agentsList, () => agentRunner?.list() ?? []);
@@ -676,20 +807,27 @@ async function main(): Promise<void> {
   companion?.on("hide", syncActivity);
   syncActivity();
 
-  // ---- Sunflower-Code : le harnais de codage du terminal ----------------
+  // ---- Sunflower-Code : le harnais de codage ----------------------------
   // Tout ce qui est tapé au CLI hors du mode « ask » part ici (voir
-  // routeToCode plus bas) : outils confinés à un dossier, permissions
-  // plan/normal/yolo, contexte qui se renouvelle tout seul.
+  // routeToCode plus bas), et l'app dédiée tape dans la MÊME session : outils
+  // confinés à un dossier, permissions plan/normal/yolo, contexte qui se
+  // renouvelle tout seul.
   codeSession = createCodeSession({
-    workdir: process.cwd(),
+    workdir: codeWorkdir,
     mode: getConfig().codeMode,
     permission: getConfig().codePermission,
-    onEvent: (ev) => tui.codeEvent(ev),
+    onEvent: (ev) => {
+      // Le terminal d'abord et sans condition : aucune logique d'app ne peut
+      // le priver d'un événement.
+      tui.codeEvent(ev);
+      codeTranscript.ingest(ev);
+    },
     capture: async () => {
       const shot = await captureScreenAtCursor();
       return shot ? { imageB64: shot.imageB64 } : null;
     },
   });
+  codeTranscript.syncInfo();
 
   // ---- Arrêt complet ----------------------------------------------------
   // Le bouton « quit » du panneau (et l'entrée du tray) ne se contente pas de
@@ -705,6 +843,7 @@ async function main(): Promise<void> {
     machine?.interrupt();
     sendTo(companion, CH.ttsStop);
     releaseWorkWindow();
+    releaseCodeWindow();
     app.quit();
   }
 
@@ -760,22 +899,16 @@ async function main(): Promise<void> {
   } else {
     showMainSurfaces();
     void ensureStt();
+    // `sunflower code` : l'app complète, mais la fenêtre du harnais ouverte
+    // d'entrée, et l'invite du terminal déjà en mode code — c'est ce qu'on a
+    // demandé en tapant la commande. Jamais pendant l'accueil.
+    if (process.argv.includes(OPEN_CODE_FLAG)) {
+      tui.setMode(getConfig().codeMode);
+      void openCodeWindow().then(() => codeTranscript.syncInfo());
+    }
   }
 
   // ---- Terminal : bannière, préchauffage du modèle, prompt -------------
-  /**
-   * LA fonction demandée par le TODO : tout ce que l'utilisateur tape au CLI
-   * hors du mode « ask » part à Sunflower-Code. Un seul point de passage, donc
-   * un seul endroit à regarder pour savoir où va un message.
-   */
-  const routeToCode = (message: string): void => {
-    if (!codeSession) {
-      tui.warn("sunflower-code isn't ready yet.");
-      return;
-    }
-    void codeSession.send(message);
-  };
-
   const showStatus = () => {
     void buildPanelData().then((data) => tui.status(tuiInfo(data)));
   };
@@ -792,6 +925,7 @@ async function main(): Promise<void> {
         if (next !== "ask") {
           codeSession?.setMode(next);
           setConfig({ codeMode: next as CodeMode });
+          codeTranscript.syncInfo();
         }
         return;
       }
@@ -805,6 +939,7 @@ async function main(): Promise<void> {
         }
         codeSession?.setPermission(next);
         setConfig({ codePermission: next });
+        codeTranscript.syncInfo();
         tui.ok(`sunflower-code permission: ${next}`);
         return;
       }
@@ -815,14 +950,16 @@ async function main(): Promise<void> {
           return;
         }
         const abs = path.resolve(dir.replace(/^~(?=$|\/)/, homedir()));
-        if (!existsSync(abs) || !statSync(abs).isDirectory()) {
+        if (!setCodeWorkdir(abs)) {
           tui.warn(`no folder at ${abs}`);
           return;
         }
-        codeSession?.setWorkdir(abs);
         tui.ok(`sunflower-code now works in ${abs}`);
         return;
       }
+      case "code":
+        void openCodeWindow().then(() => codeTranscript.syncInfo());
+        return;
       case "model": {
         const wanted = args.trim();
         if (!wanted) {
@@ -839,6 +976,8 @@ async function main(): Promise<void> {
         return;
       case "clear":
         codeSession?.clear();
+        codeTranscript.reset();
+        codeTranscript.note("conversation cleared.");
         tui.ok("sunflower-code forgot the conversation.");
         return;
       case "work": {
@@ -916,7 +1055,14 @@ async function main(): Promise<void> {
   })();
 
   // ---- Cycle de vie ----------------------------------------------------
-  app.on("second-instance", () => {
+  app.on("second-instance", (_event, argv) => {
+    // `sunflower code` alors que l'app tourne déjà : la seconde instance meurt
+    // sur le verrou, mais son argv arrive ici — on ouvre la fenêtre demandée
+    // au lieu de basculer le panneau sans rien dire.
+    if (argv.includes(OPEN_CODE_FLAG)) {
+      void openCodeWindow().then(() => codeTranscript.syncInfo());
+      return;
+    }
     const bounds = trayBounds();
     if (panel && bounds && !panel.isVisible()) togglePanel(panel, bounds);
   });
@@ -936,6 +1082,7 @@ async function main(): Promise<void> {
     orbCtl?.dispose();
     islandVisibility?.dispose();
     releaseWorkWindow();
+    releaseCodeWindow();
     stopHotkey();
     watchdog.dispose();
     void freeStt();

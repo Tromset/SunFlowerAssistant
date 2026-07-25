@@ -121,6 +121,33 @@ export function ensureBridge(): void {
         budgetMin: WORK_SETTINGS_BOUNDS.budgetMin.def,
         maxSteps: WORK_SETTINGS_BOUNDS.maxSteps.def,
       }),
+    // Sunflower-Code : dans un navigateur nu, une session vide au repos —
+    // assez pour travailler la mise en page.
+    onCodeEvent: sub("codeEvent"),
+    codeOpen: () => Promise.resolve(),
+    codeState: () =>
+      Promise.resolve({
+        info: {
+          mode: DEFAULT_CONFIG.codeMode,
+          permission: DEFAULT_CONFIG.codePermission,
+          workdir: "~/project",
+          status: "idle" as const,
+          turns: 0,
+          tokens: 0,
+          messages: 0,
+        },
+        entries: [],
+        draft: "",
+        pending: null,
+        renewals: 0,
+      }),
+    codeSend: () => Promise.resolve(),
+    codeApprove: () => Promise.resolve(),
+    codeInterrupt: () => Promise.resolve(),
+    codeClear: () => Promise.resolve(),
+    codeSetMode: () => Promise.resolve(),
+    codeSetPermission: () => Promise.resolve(),
+    codePickWorkdir: () => Promise.resolve(null),
   };
   window.sunflower = stub;
 }

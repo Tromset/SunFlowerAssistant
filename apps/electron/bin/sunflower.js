@@ -22,6 +22,13 @@ if (sub) {
   return;
 }
 
+// `sunflower code` : PAS une sous-commande autonome — c'est l'app complète,
+// avec la fenêtre Sunflower-Code ouverte d'entrée. Traduit en drapeau
+// explicite plutôt que laissé nu : main/index.ts ne devine pas ce que veut
+// dire un argument qui s'appelle « code ».
+const forward = process.argv.slice(2);
+if (forward[0] === "code") forward[0] = "--open-code";
+
 const appRoot = path.resolve(__dirname, "..");
 // stderr filtré : le bruit natif whisper.cpp/ggml part dans un fichier de
 // log, le terminal ne garde que le dialogue (SUNFLOWER_DEBUG=1 = tout brut).
@@ -78,6 +85,6 @@ if (!existsSync(path.join(appRoot, "dist", ".build-ok"))) {
   if (build.status !== 0) process.exit(build.status ?? 1);
 }
 
-spawnQuiet(electronBin, [appRoot, ...process.argv.slice(2)], {
+spawnQuiet(electronBin, [appRoot, ...forward], {
   onClose: (code) => process.exit(code),
 });
