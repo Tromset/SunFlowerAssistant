@@ -1,6 +1,8 @@
 // Panel: live status (permissions, model, voice), tabs, background agents, quit.
 import { ensureBridge } from "../shared/dev-stub";
 import { POSES, pixelArtSvg } from "../../shared/sunflower-pixels";
+import { ACTIVITY_LABELS, type ActivitySnapshot } from "../../shared/activity";
+import type { WorkSettings } from "../../shared/work";
 import type { PanelData, PermissionId } from "../../shared/state";
 import type {
   AgentCommandDecision,
@@ -93,6 +95,7 @@ function render(data: PanelData): void {
   renderPermissions(data);
   renderModel(data);
   renderVoice(data);
+  reportHeight();
 }
 
 for (const row of document.querySelectorAll<HTMLElement>(".perm-row")) {
@@ -111,6 +114,7 @@ voiceBadge.addEventListener("click", () => {
 
 const tabHome = document.getElementById("tab-home")!;
 const tabAgents = document.getElementById("tab-agents")!;
+const tabWork = document.getElementById("tab-work")!;
 const viewHome = document.getElementById("view-home")!;
 const viewAgents = document.getElementById("view-agents")!;
 function selectTab(agents: boolean): void {
@@ -118,16 +122,115 @@ function selectTab(agents: boolean): void {
   tabAgents.classList.toggle("active", agents);
   (viewHome as HTMLElement).hidden = agents;
   (viewAgents as HTMLElement).hidden = !agents;
+  reportHeight();
 }
 tabHome.addEventListener("click", () => selectTab(false));
 tabAgents.addEventListener("click", () => selectTab(true));
+// « work » n'est pas un onglet : il lance l'app dédiée (fenêtre à part).
+tabWork.addEventListener("click", () => {
+  void window.sunflower.workOpen();
+});
 
 // Le rond des agents demande d'ouvrir directement sur l'onglet agents.
 window.sunflower.onPanelFocusAgents(() => selectTab(true));
 
-document.getElementById("quit")!.addEventListener("click", () => {
+// ---- Hauteur de la fenêtre = hauteur réelle de la carte -----------------
+// La fenêtre du panneau est transparente et de taille fixe côté Electron :
+// une carte plus haute qu'elle se faisait rogner par le bas, coins arrondis
+// compris. On mesure la hauteur NATURELLE (châssis + contenu de la vue qui
+// défile) et la fenêtre s'y ajuste, bornée à l'écran par le main.
+const card = document.getElementById("card")!;
+/** Marges verticales du body (6 en haut, 8 en bas) + les deux bordures. */
+const CARD_MARGIN = 16;
+let lastReported = 0;
+
+/** Mesure SYNCHRONE, volontairement : le panneau passe l'essentiel de sa vie
+ *  masqué, et Chromium met en pause requestAnimationFrame dans une fenêtre
+ *  cachée. Différer la mesure voulait dire ouvrir une première fois à la
+ *  mauvaise hauteur, puis la voir sauter. Lire la mise en page depuis un
+ *  ResizeObserver est sans danger tant qu'on n'y écrit pas — la fenêtre, elle,
+ *  est redimensionnée par le main, de façon asynchrone. */
+function reportHeight(): void {
+  const view = (viewAgents as HTMLElement).hidden ? viewHome : viewAgents;
+  // Le châssis (en-tête, raccourci, onglets, pied) ne dépend pas de la
+  // taille de la fenêtre : c'est la carte moins la vue qui défile.
+  const chrome = card.clientHeight - view.clientHeight;
+  const natural = Math.ceil(chrome + view.scrollHeight) + CARD_MARGIN;
+  if (Math.abs(natural - lastReported) < 2) return;
+  lastReported = natural;
+  window.sunflower.panelResize(natural);
+}
+
+const heightWatcher = new ResizeObserver(() => reportHeight());
+heightWatcher.observe(card);
+heightWatcher.observe(viewHome);
+heightWatcher.observe(viewAgents);
+
+// ---- Quitter : un vrai bouton, un vrai arrêt ---------------------------
+const quitBtn = document.getElementById("quit") as HTMLButtonElement;
+quitBtn.addEventListener("click", () => {
+  // Le main coupe agents, runs de travail, voix et fenêtres avant de sortir
+  // (voir shutdownEverything dans main/index.ts) : ça peut prendre un
+  // instant, autant le dire au lieu de laisser le bouton inerte.
+  quitBtn.disabled = true;
+  quitBtn.textContent = "closing everything…";
   void window.sunflower.quit();
 });
+
+// ---- Humeurs contextuelles ---------------------------------------------
+const moodsEnable = document.getElementById("moods-enable") as HTMLInputElement;
+const moodSub = document.getElementById("mood-sub")!;
+const moodBadge = document.getElementById("mood-badge")!;
+let moodsOn = true;
+let lastMood: ActivitySnapshot = { context: "none", app: "", host: "" };
+
+function renderMood(): void {
+  if (!moodsOn) {
+    moodBadge.className = "badge off";
+    moodBadge.textContent = "[--] off";
+    moodSub.textContent = "the sunflower stays plain";
+    return;
+  }
+  const known = lastMood.context !== "none";
+  moodBadge.className = `badge ${known ? "ok" : "off"}`;
+  moodBadge.textContent = known ? "[ok] on" : "[..] watching";
+  const where = lastMood.host || lastMood.app;
+  moodSub.textContent = known
+    ? `${ACTIVITY_LABELS[lastMood.context]}${where ? ` · ${where}` : ""}`
+    : "nothing in particular";
+}
+
+moodsEnable.addEventListener("change", () => {
+  moodsOn = moodsEnable.checked;
+  renderMood();
+  void window.sunflower.setConfig({ moodsEnabled: moodsOn });
+});
+
+window.sunflower.onActivity((snapshot) => {
+  lastMood = snapshot;
+  renderMood();
+});
+
+// ---- Sunflower Work -----------------------------------------------------
+const workEnable = document.getElementById("work-enable") as HTMLInputElement;
+const workSub = document.getElementById("work-sub")!;
+
+function renderWork(settings: WorkSettings): void {
+  workEnable.checked = settings.enabled;
+  workSub.textContent = settings.enabled
+    ? `on · ${settings.requiredIdleSec}s idle · ${settings.maxSteps} steps max`
+    : "off — nothing is ever touched";
+}
+
+workEnable.addEventListener("change", () => {
+  void window.sunflower
+    .workSettingsSet({ enabled: workEnable.checked })
+    .then(renderWork);
+});
+document.getElementById("work-open")!.addEventListener("click", () => {
+  void window.sunflower.workOpen();
+});
+void window.sunflower.workSettingsGet().then(renderWork);
 
 // ---- Compagnon : roam ↔ dock ------------------------------------------
 // Même état que le menu du tray et le double-clic sur la fleur ; on passe par
@@ -157,9 +260,12 @@ segDock.addEventListener("click", () => applyCompanionMode(true));
 
 // Rester synchro quand la bascule vient d'ailleurs (tray, double-clic).
 window.sunflower.onCompanionDocked(renderCompanionMode);
-void window.sunflower
-  .getConfig()
-  .then((cfg) => renderCompanionMode(cfg.companionMode === "docked"));
+void window.sunflower.getConfig().then((cfg) => {
+  renderCompanionMode(cfg.companionMode === "docked");
+  moodsOn = cfg.moodsEnabled;
+  moodsEnable.checked = moodsOn;
+  renderMood();
+});
 
 // ---- Agents de code en arrière-plan ------------------------------------
 // Rien n'est écrit sur disque depuis cette vue sans un clic accept explicite,
@@ -240,6 +346,7 @@ function renderAgentList(): void {
     row.addEventListener("click", () => void openReview(run.id));
     agentListEl.append(row);
   }
+  reportHeight();
 }
 
 async function openReview(id: string): Promise<void> {
@@ -251,6 +358,7 @@ async function openReview(id: string): Promise<void> {
   renderReview(run);
   agentsMainEl.hidden = true;
   reviewEl.hidden = false;
+  reportHeight();
 }
 
 function closeReview(): void {
@@ -258,6 +366,7 @@ function closeReview(): void {
   livePartial = "";
   reviewEl.hidden = true;
   agentsMainEl.hidden = false;
+  reportHeight();
 }
 
 const STATUS_TEXT: Record<AgentStatus, string> = {
@@ -431,6 +540,7 @@ function renderReview(run: AgentRun): void {
       reviewFilesEl.append(p);
     }
     stickScroll();
+    reportHeight();
     return;
   }
   for (const change of run.proposal) {
@@ -480,6 +590,7 @@ function renderReview(run: AgentRun): void {
     box.append(head, diff);
     reviewFilesEl.append(box);
   }
+  reportHeight();
 }
 
 async function decide(

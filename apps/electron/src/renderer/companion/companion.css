@@ -294,6 +294,184 @@ body.flip #row {
   }
 }
 
+/* ── Humeurs contextuelles ─────────────────────────────────────────────
+   Le tournesol se donne un accessoire selon l'app au premier plan : casque
+   sur Spotify, popcorn devant Netflix, plaid devant Figma, téléphone sur
+   Discord… (dessins dans shared/sunflower-pixels.ts, détection dans
+   main/activity.ts). Comme les vignettes, chaque animation est scopée à la
+   classe `mood-*` portée par #flower : dès que l'humeur change, la classe
+   part et l'animation s'arrête — aucun timer ne fuit, et le reset
+   prefers-reduced-motion de base.css les fige toutes. */
+#flower[class*="mood-"] .sf-note-1,
+#flower[class*="mood-"] .sf-note-2,
+#flower[class*="mood-"] .sf-sign,
+#flower[class*="mood-"] .sf-pop,
+#flower[class*="mood-"] .sf-msg-1,
+#flower[class*="mood-"] .sf-msg-2,
+#flower[class*="mood-"] .sf-zzz {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+}
+
+/* music : deux croches montent et s'effacent, décalées. */
+#flower.mood-music .sf-note-1 {
+  animation: sfNoteRise 2.6s ease-out infinite;
+}
+#flower.mood-music .sf-note-2 {
+  animation: sfNoteRise 2.6s ease-out infinite;
+  animation-delay: -1.3s;
+}
+@keyframes sfNoteRise {
+  0% {
+    opacity: 0;
+    transform: translate(0, 1.5px);
+  }
+  20% {
+    opacity: 1;
+  }
+  75% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(1.2px, -3.5px);
+  }
+}
+
+/* ai : la pancarte est agitée fièrement. */
+#flower.mood-ai .sf-sign {
+  animation: sfSignWave 2.4s ease-in-out infinite;
+}
+@keyframes sfSignWave {
+  0%,
+  100% {
+    transform: rotate(-5deg);
+  }
+  50% {
+    transform: rotate(6deg) translateY(-0.4px);
+  }
+}
+
+/* streaming : un grain de pop-corn saute hors du seau. */
+#flower.mood-streaming .sf-pop {
+  animation: sfPopcorn 1.9s cubic-bezier(0.3, 0, 0.4, 1) infinite;
+}
+@keyframes sfPopcorn {
+  0%,
+  55% {
+    opacity: 0;
+    transform: translateY(2.5px);
+  }
+  60% {
+    opacity: 1;
+    transform: translateY(1px);
+  }
+  78% {
+    opacity: 1;
+    transform: translateY(-2px);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(1.5px);
+  }
+}
+
+/* creative : l'écran scintille pendant qu'il travaille sous son plaid. */
+#flower.mood-creative .sf-screen {
+  opacity: 0.35;
+  animation: sfScreenFlicker 3.2s steps(1, end) infinite;
+}
+
+/* messaging : les bulles s'envolent l'une après l'autre. */
+#flower.mood-messaging .sf-msg-1 {
+  animation: sfBubbleUp 2.2s ease-out infinite;
+}
+#flower.mood-messaging .sf-msg-2 {
+  animation: sfBubbleUp 2.2s ease-out infinite;
+  animation-delay: -1.1s;
+}
+@keyframes sfBubbleUp {
+  0% {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+  25% {
+    opacity: 1;
+  }
+  70% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+}
+
+/* doomscroll : lueur blafarde du téléphone, « zzz » qui s'échappe, et la
+   fleur entière qui s'affaisse un peu plus à chaque cycle. */
+#flower.mood-doomscroll .sf-doom-glow {
+  opacity: 0.2;
+  animation: sfDoomGlow 4.5s ease-in-out infinite;
+}
+#flower.mood-doomscroll .sf-zzz {
+  animation: sfZzz 3.4s ease-out infinite;
+}
+#flower.mood-doomscroll {
+  animation: sfSlump 6s ease-in-out infinite;
+}
+@keyframes sfDoomGlow {
+  0%,
+  100% {
+    opacity: 0.16;
+  }
+  40% {
+    opacity: 0.34;
+  }
+  55% {
+    opacity: 0.2;
+  }
+  70% {
+    opacity: 0.3;
+  }
+}
+@keyframes sfZzz {
+  0% {
+    opacity: 0;
+    transform: translate(0, 1px);
+  }
+  30% {
+    opacity: 0.9;
+  }
+  70% {
+    opacity: 0.6;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(1px, -2.5px);
+  }
+}
+@keyframes sfSlump {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  55% {
+    transform: translateY(2px);
+  }
+}
+
+/* coding : l'humeur réutilise la vignette du portable des agents, donc les
+   mêmes animations — déclarées ici pour la classe mood-coding. */
+#flower.mood-coding .sf-typer {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  animation: sfTyping 2.2s ease-in-out infinite;
+}
+#flower.mood-coding .sf-glow {
+  opacity: 0.4;
+  animation: sfScreenFlicker 2.4s steps(1, end) infinite;
+}
+
 /* ── Pause d'inactivité ────────────────────────────────────────────────
    Après 60 s de pose idle (voir companion.ts), les animations décoratives
    infinies sont figées : zéro travail de compositing quand personne ne

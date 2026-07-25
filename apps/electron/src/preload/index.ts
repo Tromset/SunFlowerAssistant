@@ -6,6 +6,7 @@ import type {
   AgentCommandDecision,
   AgentDecision,
 } from "../shared/agents";
+import type { WorkSettings } from "../shared/work";
 
 function on(
   channel: string,
@@ -77,6 +78,23 @@ const bridge: SunflowerBridge = {
   companionSetHover: (hovering: boolean) =>
     ipcRenderer.send(CH.companionHover, hovering),
   companionToggleDock: () => ipcRenderer.invoke(CH.companionToggleDock),
+  // Humeurs contextuelles du compagnon (voir shared/activity.ts).
+  onActivity: (cb) => on(CH.activity, cb as (...a: unknown[]) => void),
+  // Le panneau mesure sa carte et la fenêtre s'y ajuste.
+  panelResize: (height: number) => ipcRenderer.send(CH.panelResize, height),
+  // Sunflower Work : app dédiée + pilotage des sessions.
+  onWorkChanged: (cb) => on(CH.workChanged, cb as (...a: unknown[]) => void),
+  onWorkEvent: (cb) => on(CH.workEvent, cb as (...a: unknown[]) => void),
+  workOpen: () => ipcRenderer.invoke(CH.workOpen),
+  workList: () => ipcRenderer.invoke(CH.workList),
+  workGet: (id: string) => ipcRenderer.invoke(CH.workGet, id),
+  workStart: (task: string) => ipcRenderer.invoke(CH.workStart, task),
+  workCancel: (id: string) => ipcRenderer.invoke(CH.workCancel, id),
+  workChat: (id: string, text: string) =>
+    ipcRenderer.invoke(CH.workChat, id, text),
+  workSettingsGet: () => ipcRenderer.invoke(CH.workSettingsGet),
+  workSettingsSet: (patch: Partial<WorkSettings>) =>
+    ipcRenderer.invoke(CH.workSettingsSet, patch),
 };
 
 contextBridge.exposeInMainWorld("sunflower", bridge);

@@ -20,6 +20,22 @@ export interface SunflowerConfig {
    *  FAUX par défaut — opt-in explicite via le menu du tray.
    *  Voir main/work/runner.ts. */
   sunflowerWorkEnabled: boolean;
+  /** Secondes d'inactivité exigées avant le premier geste d'un run de travail. */
+  workRequiredIdleSec: number;
+  /** Budget total d'un run de travail, en minutes (0 = illimité — Work est
+   *  fait pour tourner longtemps sur un modèle local). */
+  workBudgetMin: number;
+  /** Étapes maximum par run de travail. */
+  workMaxSteps: number;
+  /** Humeurs contextuelles : le tournesol se donne un petit accessoire selon
+   *  l'app au premier plan (casque, popcorn, plaid…). Purement décoratif et
+   *  100 % local — voir shared/activity.ts. */
+  moodsEnabled: boolean;
+  /** Sunflower-Code : niveau de permission par défaut du harnais de codage
+   *  du CLI (« plan » lecture seule, « normal » demande, « yolo » libre). */
+  codePermission: "plan" | "normal" | "yolo";
+  /** Sunflower-Code : mode de départ du CLI (code / chat / vision / plan). */
+  codeMode: "code" | "chat" | "vision" | "plan";
 }
 
 export const DEFAULT_CONFIG: SunflowerConfig = {
@@ -31,4 +47,10 @@ export const DEFAULT_CONFIG: SunflowerConfig = {
   agentOrbY: 0.5,
   companionMode: "follow",
   sunflowerWorkEnabled: false,
+  workRequiredIdleSec: 20,
+  workBudgetMin: 120,
+  workMaxSteps: 300,
+  moodsEnabled: true,
+  codePermission: "normal",
+  codeMode: "code",
 };

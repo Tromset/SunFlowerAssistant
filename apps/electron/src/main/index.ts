@@ -6,13 +6,36 @@ import {
   nativeImage,
   screen,
 } from "electron";
+import { existsSync, statSync } from "node:fs";
+import { homedir } from "node:os";
+import path from "node:path";
 import { CH, type MicDataPayload, type MicErrorCode } from "../shared/ipc";
 import type { PanelData, PermissionId, StatePayload } from "../shared/state";
 import type {
   AgentCommandDecision,
   AgentDecision,
 } from "../shared/agents";
+import type { ActivitySnapshot } from "../shared/activity";
+import {
+  CODE_PERMISSIONS,
+  type CodeMode,
+  type CodePermission,
+} from "../shared/code";
+import {
+  clampWorkSettings,
+  type WorkEvent,
+  type WorkSettings,
+} from "../shared/work";
 import { createAgentRunner, type AgentRunner } from "./agents/runner";
+import { createActivityWatcher, type ActivityWatcher } from "./activity";
+import { createCodeSession, type CodeSession } from "./code/session";
+import { createWorkStore } from "./work/store";
+import { idleMs } from "./presence";
+import {
+  openWorkWindow,
+  releaseWorkWindow,
+  workWindow,
+} from "./windows/work";
 import {
   createAgentOrbController,
   createAgentOrbWindow,
@@ -49,7 +72,7 @@ import {
   transcribe,
 } from "./stt";
 import { createTray, trayBounds } from "./tray";
-import { createTui, type TuiStatusInfo } from "./tui";
+import { CLI_MODES, createTui, type CliMode, type TuiStatusInfo } from "./tui";
 import { createWatchdog } from "./watchdog";
 import { createWorkRunner, type WorkRunner } from "./work/runner";
 import {
@@ -59,7 +82,7 @@ import {
 } from "./windows/companion";
 import { createIslandVisibility, createIslandWindow } from "./windows/island";
 import { createOnboardingWindow } from "./windows/onboarding";
-import { createPanelWindow, togglePanel } from "./windows/panel";
+import { createPanelWindow, resizePanel, togglePanel } from "./windows/panel";
 import {
   createPointerWindow,
   hidePointer,
@@ -94,6 +117,9 @@ async function main(): Promise<void> {
     sttStatus: d.stt.status,
     hotkeyAvailable: d.hotkeyAvailable,
     version: d.version,
+    codeWorkdir: codeSession?.info().workdir ?? process.cwd(),
+    codePermission: getConfig().codePermission,
+    workEnabled: getConfig().sunflowerWorkEnabled,
   });
 
   let island: BrowserWindow | null = null;
@@ -109,7 +135,13 @@ async function main(): Promise<void> {
   let workRunner: WorkRunner | null = null;
   let orb: BrowserWindow | null = null;
   let orbCtl: AgentOrbController | null = null;
+  let activity: ActivityWatcher | null = null;
+  let codeSession: CodeSession | null = null;
   let quitting = false;
+  /** Réévalue si le sondage d'humeur doit tourner. Remplacé une fois le
+   *  compagnon et le guetteur créés ; en attendant, no-op (les handlers IPC
+   *  sont enregistrés avant les fenêtres et peuvent déjà l'appeler). */
+  let syncActivity: () => void = () => {};
 
   const sendTo = (
     win: BrowserWindow | null,
@@ -125,6 +157,36 @@ async function main(): Promise<void> {
     const bounds = trayBounds();
     if (panel && bounds && !panel.isVisible()) togglePanel(panel, bounds);
     sendTo(panel, CH.panelFocusAgents);
+  };
+
+  // ---- Sunflower Work : registre des sessions + réglages ---------------
+  // Le registre est créé tôt : les handlers IPC (enregistrés avant les
+  // fenêtres) et l'app Work dédiée tapent tous les deux dedans.
+  const sendWork = (channel: string, ...args: unknown[]) => {
+    sendTo(panel, channel, ...args);
+    sendTo(workWindow(), channel, ...args);
+  };
+  const workStore = createWorkStore((ev: WorkEvent) =>
+    sendWork(CH.workEvent, ev),
+  );
+  const workSettings = (): WorkSettings => {
+    const cfg = getConfig();
+    return {
+      enabled: cfg.sunflowerWorkEnabled,
+      requiredIdleSec: cfg.workRequiredIdleSec,
+      budgetMin: cfg.workBudgetMin,
+      maxSteps: cfg.workMaxSteps,
+    };
+  };
+  const saveWorkSettings = (patch: Partial<WorkSettings>): WorkSettings => {
+    const next = clampWorkSettings(patch, workSettings());
+    setConfig({
+      sunflowerWorkEnabled: next.enabled,
+      workRequiredIdleSec: next.requiredIdleSec,
+      workBudgetMin: next.budgetMin,
+      workMaxSteps: next.maxSteps,
+    });
+    return next;
   };
 
   // ---- Statut agrégé (panneau + onboarding) ----------------------------
@@ -211,13 +273,46 @@ async function main(): Promise<void> {
   });
   ipcMain.handle(CH.statusGet, () => buildPanelData());
   ipcMain.handle(CH.configGet, () => getConfig());
-  ipcMain.handle(CH.configSet, (_e, patch) => setConfig(patch));
+  ipcMain.handle(CH.configSet, (_e, patch) => {
+    const next = setConfig(patch);
+    // Décocher « moods » doit arrêter le sondage tout de suite, pas au
+    // prochain changement de visibilité du compagnon.
+    syncActivity();
+    return next;
+  });
   ipcMain.handle(CH.whisperDownload, () => {
     void ensureStt();
   });
   ipcMain.handle(CH.appQuit, () => {
-    app.quit();
+    shutdownEverything();
   });
+  // Le panneau mesure sa carte : la fenêtre s'y ajuste pour que les coins
+  // arrondis du bas ne soient jamais rognés (voir windows/panel.ts).
+  ipcMain.on(CH.panelResize, (_e, height: number) => {
+    if (panel && !panel.isDestroyed()) resizePanel(panel, Number(height));
+  });
+  // ---- Sunflower Work : app dédiée + pilotage des sessions -------------
+  ipcMain.handle(CH.workOpen, async () => {
+    await openWorkWindow();
+    // La fenêtre fraîchement ouverte part d'une liste à jour.
+    sendWork(CH.workChanged, workStore.list());
+  });
+  ipcMain.handle(CH.workList, () => workStore.list());
+  ipcMain.handle(CH.workGet, (_e, id: string) => workStore.get(String(id)));
+  ipcMain.handle(
+    CH.workStart,
+    (_e, task: string) => workRunner?.start(String(task)) ?? null,
+  );
+  ipcMain.handle(CH.workCancel, (_e, id: string) => {
+    workRunner?.cancelSession(String(id), "stopped from the work app.");
+  });
+  ipcMain.handle(CH.workChat, (_e, id: string, text: string) => {
+    workRunner?.chat(String(id), String(text));
+  });
+  ipcMain.handle(CH.workSettingsGet, () => workSettings());
+  ipcMain.handle(CH.workSettingsSet, (_e, patch: Partial<WorkSettings>) =>
+    workRunner ? workRunner.setSettings(patch) : saveWorkSettings(patch),
+  );
   // Agents de code : toute écriture disque passe par agentDecide (accept),
   // toute exécution de commande par agentCommand (approve) — jamais sans clic.
   ipcMain.handle(CH.agentsList, () => agentRunner?.list() ?? []);
@@ -425,7 +520,7 @@ async function main(): Promise<void> {
     },
     // Sunflower Work : opt-in explicite (tray), pilotage remis au runner.
     workEnabled: () => getConfig().sunflowerWorkEnabled,
-    workStart: (task) => workRunner?.start(task) ?? false,
+    workStart: (task) => workRunner?.start(task) != null,
   });
 
   // ---- Agents de code en arrière-plan ----------------------------------
@@ -515,8 +610,10 @@ async function main(): Promise<void> {
   // touchés qu'au repos — une session vocale reprend toujours la main (et,
   // de toute façon, taper le hotkey est une entrée réelle qui annule le run).
   let workIdleTimer: NodeJS.Timeout | null = null;
-  workRunner = createWorkRunner({
-    enabled: () => getConfig().sunflowerWorkEnabled,
+  workRunner = createWorkRunner(workStore, {
+    settings: workSettings,
+    saveSettings: saveWorkSettings,
+    onSessionsChanged: (sessions) => sendWork(CH.workChanged, sessions),
     broadcast: (payload) => {
       // Mémorisé même quand la machine est occupée : sa retombée au repos
       // ré-émettra ce dernier état (voir machine.broadcast plus haut).
@@ -557,21 +654,81 @@ async function main(): Promise<void> {
     },
   });
 
+  // ---- Humeurs contextuelles du compagnon ------------------------------
+  // Purement décoratif : l'app au premier plan (et le site, dans un
+  // navigateur) donne un petit accessoire au tournesol. Rien ne sort de la
+  // machine, rien n'est écrit, et le sondage s'arrête dès que le compagnon
+  // est masqué ou que l'option est décochée. Voir shared/activity.ts.
+  activity = createActivityWatcher({
+    idleMs,
+    onChange: (snapshot: ActivitySnapshot) => {
+      sendTo(companion, CH.activity, snapshot);
+      sendTo(panel, CH.activity, snapshot);
+    },
+  });
+  syncActivity = () => {
+    const on =
+      getConfig().moodsEnabled &&
+      !!companion &&
+      !companion.isDestroyed() &&
+      companion.isVisible();
+    activity?.setEnabled(on);
+  };
+  companion?.on("show", syncActivity);
+  companion?.on("hide", syncActivity);
+  syncActivity();
+
+  // ---- Sunflower-Code : le harnais de codage du terminal ----------------
+  // Tout ce qui est tapé au CLI hors du mode « ask » part ici (voir
+  // routeToCode plus bas) : outils confinés à un dossier, permissions
+  // plan/normal/yolo, contexte qui se renouvelle tout seul.
+  codeSession = createCodeSession({
+    workdir: process.cwd(),
+    mode: getConfig().codeMode,
+    permission: getConfig().codePermission,
+    onEvent: (ev) => tui.codeEvent(ev),
+    capture: async () => {
+      const shot = await captureScreenAtCursor();
+      return shot ? { imageB64: shot.imageB64 } : null;
+    },
+  });
+
+  // ---- Arrêt complet ----------------------------------------------------
+  // Le bouton « quit » du panneau (et l'entrée du tray) ne se contente pas de
+  // fermer les fenêtres : il coupe TOUTE activité — agents en file, run de
+  // travail en cours, session de code, voix, sondage d'humeur — avant de
+  // rendre la main. Idempotent : before-quit repasse derrière.
+  function shutdownEverything(): void {
+    workRunner?.cancel("sunflower is quitting.");
+    workRunner?.dispose();
+    agentRunner?.dispose();
+    codeSession?.dispose();
+    activity?.dispose();
+    machine?.interrupt();
+    sendTo(companion, CH.ttsStop);
+    releaseWorkWindow();
+    app.quit();
+  }
+
   // ---- Tray + hotkey ---------------------------------------------------
   createTray({
     onClick: (bounds) => {
       if (panel) togglePanel(panel, bounds);
       ensureStatusLoop();
     },
-    onQuit: () => app.quit(),
+    onQuit: () => shutdownEverything(),
     isCompanionDocked: () => getConfig().companionMode === "docked",
     onToggleCompanionDock: toggleCompanionDock,
     isWorkEnabled: () => getConfig().sunflowerWorkEnabled,
     onToggleWork: () => {
-      const next = !getConfig().sunflowerWorkEnabled;
-      setConfig({ sunflowerWorkEnabled: next });
-      // Couper l'interrupteur arrête aussi tout run en cours, sur-le-champ.
-      if (!next) workRunner?.cancel("switched off from the tray.");
+      workRunner?.setSettings({
+        enabled: !getConfig().sunflowerWorkEnabled,
+      });
+    },
+    onOpenWork: () => {
+      void openWorkWindow().then(() =>
+        sendWork(CH.workChanged, workStore.list()),
+      );
     },
   });
   // Pas de push-to-talk tant que l'accueil n'est pas terminé.
@@ -608,19 +765,155 @@ async function main(): Promise<void> {
   }
 
   // ---- Terminal : bannière, préchauffage du modèle, prompt -------------
+  /**
+   * LA fonction demandée par le TODO : tout ce que l'utilisateur tape au CLI
+   * hors du mode « ask » part à Sunflower-Code. Un seul point de passage, donc
+   * un seul endroit à regarder pour savoir où va un message.
+   */
+  const routeToCode = (message: string): void => {
+    if (!codeSession) {
+      tui.warn("sunflower-code isn't ready yet.");
+      return;
+    }
+    void codeSession.send(message);
+  };
+
+  const showStatus = () => {
+    void buildPanelData().then((data) => tui.status(tuiInfo(data)));
+  };
+
+  const runCommand = (name: string, args: string): void => {
+    switch (name) {
+      case "mode": {
+        const next = args.trim().toLowerCase() as CliMode;
+        if (!CLI_MODES.includes(next)) {
+          tui.warn(`modes: ${CLI_MODES.join(", ")} — current: ${tui.mode()}`);
+          return;
+        }
+        tui.setMode(next);
+        if (next !== "ask") {
+          codeSession?.setMode(next);
+          setConfig({ codeMode: next as CodeMode });
+        }
+        return;
+      }
+      case "permission": {
+        const next = args.trim().toLowerCase() as CodePermission;
+        if (!CODE_PERMISSIONS.includes(next)) {
+          tui.warn(
+            `permissions: ${CODE_PERMISSIONS.join(", ")} — current: ${getConfig().codePermission}`,
+          );
+          return;
+        }
+        codeSession?.setPermission(next);
+        setConfig({ codePermission: next });
+        tui.ok(`sunflower-code permission: ${next}`);
+        return;
+      }
+      case "cd": {
+        const dir = args.trim();
+        if (!dir) {
+          tui.notice(`project folder: ${codeSession?.info().workdir ?? "?"}`);
+          return;
+        }
+        const abs = path.resolve(dir.replace(/^~(?=$|\/)/, homedir()));
+        if (!existsSync(abs) || !statSync(abs).isDirectory()) {
+          tui.warn(`no folder at ${abs}`);
+          return;
+        }
+        codeSession?.setWorkdir(abs);
+        tui.ok(`sunflower-code now works in ${abs}`);
+        return;
+      }
+      case "model": {
+        const wanted = args.trim();
+        if (!wanted) {
+          showStatus();
+          return;
+        }
+        setConfig({ ollamaModel: wanted });
+        warmModel();
+        tui.ok(`model: ${wanted} — run \`sunflower models\` to browse.`);
+        return;
+      }
+      case "status":
+        showStatus();
+        return;
+      case "clear":
+        codeSession?.clear();
+        tui.ok("sunflower-code forgot the conversation.");
+        return;
+      case "work": {
+        const task = args.trim();
+        if (!task) {
+          const running = workRunner?.list().filter((s) =>
+            ["queued", "waiting-idle", "running"].includes(s.status),
+          );
+          tui.notice(
+            running && running.length > 0
+              ? `${running.length} run(s) in flight — open the work app for the details.`
+              : "nothing running. /work <chore> hands one over.",
+          );
+          return;
+        }
+        if (!getConfig().sunflowerWorkEnabled) {
+          tui.warn(
+            "sunflower work is off — enable it in the panel, the tray, or the work app.",
+          );
+          return;
+        }
+        const started = workRunner?.start(task);
+        if (started) {
+          tui.ok(`work queued — "${task}". step away and it starts.`);
+        } else {
+          tui.warn("work refused it — macOS and the accessibility grant are required.");
+        }
+        return;
+      }
+      case "agents": {
+        const runs = agentRunner?.list() ?? [];
+        if (runs.length === 0) {
+          tui.notice("no background agent — start one from the panel.");
+          return;
+        }
+        for (const run of runs.slice(0, 10)) {
+          tui.log(`  ${run.status.padEnd(17)} ${run.task}`);
+        }
+        return;
+      }
+      case "quit":
+      case "exit":
+        shutdownEverything();
+        return;
+      default:
+        tui.warn(`unknown command /${name} — /help lists them all.`);
+    }
+  };
+
   void (async () => {
     const data = await buildPanelData();
     tui.banner(tuiInfo(data));
     if (data.model.reachable && data.model.pulled) warmModel();
     tui.startRepl({
       submit: (q) => (onboarding ? false : (machine?.askText(q) ?? false)),
+      code: (message) => {
+        if (onboarding) {
+          tui.warn("finish the onboarding first.");
+          return;
+        }
+        routeToCode(message);
+      },
+      approve: (approved) => codeSession?.approve(approved),
+      command: runCommand,
       interrupt: () => {
-        // Ctrl+C au terminal : la session ET un éventuel run de travail.
+        // Ctrl+C au terminal : la session, la session de code ET un éventuel
+        // run de travail — tout ce qui pourrait encore tourner.
         workRunner?.cancel("interrupted.");
+        codeSession?.interrupt();
         machine?.interrupt();
       },
-      quit: () => app.quit(),
-      isBusy: () => machine?.busy() ?? false,
+      quit: () => shutdownEverything(),
+      isBusy: () => (machine?.busy() ?? false) || (codeSession?.busy() ?? false),
     });
   })();
 
@@ -639,9 +932,12 @@ async function main(): Promise<void> {
     machine?.interrupt();
     workRunner?.dispose();
     agentRunner?.dispose();
+    codeSession?.dispose();
+    activity?.dispose();
     companionCtl?.dispose();
     orbCtl?.dispose();
     islandVisibility?.dispose();
+    releaseWorkWindow();
     stopHotkey();
     watchdog.dispose();
     void freeStt();

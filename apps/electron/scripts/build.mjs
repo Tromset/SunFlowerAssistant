@@ -51,6 +51,7 @@ const rendererEntries = [
   "pointer/pointer.ts",
   "onboarding/onboarding.ts",
   "agent-orb/agent-orb.ts",
+  "work/work.ts",
 ].map((p) => path.join(root, "src", "renderer", p));
 
 /** @type {import("esbuild").BuildOptions[]} */

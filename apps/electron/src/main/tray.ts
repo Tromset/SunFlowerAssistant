@@ -27,6 +27,8 @@ export function createTray(opts: {
   /** Sunflower Work autorisé ? (lu à l'ouverture du menu : coche à jour). */
   isWorkEnabled: () => boolean;
   onToggleWork: () => void;
+  /** Ouvre l'app Sunflower Work (fenêtre dédiée). */
+  onOpenWork: () => void;
 }): Tray {
   tray = new Tray(buildTrayImage());
   nativeTheme.on("updated", () => {
@@ -52,6 +54,7 @@ export function createTray(opts: {
           checked: opts.isWorkEnabled(),
           click: opts.onToggleWork,
         },
+        { label: "open Sunflower Work…", click: opts.onOpenWork },
         { type: "separator" },
         { label: "quit sunflower", click: opts.onQuit },
       ]),

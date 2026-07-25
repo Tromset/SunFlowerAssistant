@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="stylesheet" href="../shared/tokens/fonts.css" />
+    <link rel="stylesheet" href="../shared/tokens/colors.css" />
+    <link rel="stylesheet" href="../shared/tokens/typography.css" />
+    <link rel="stylesheet" href="../shared/tokens/spacing.css" />
+    <link rel="stylesheet" href="../shared/tokens/effects.css" />
+    <link rel="stylesheet" href="../shared/base.css" />
+    <link rel="stylesheet" href="./work.css" />
+  </head>
+  <body>
+    <header id="titlebar">
+      <span id="title-icon"></span>
+      <span class="title-name">sunflower <em>work</em></span>
+      <span id="title-note">nothing running</span>
+      <label id="enable-toggle" for="enable-work">
+        <input id="enable-work" type="checkbox" />
+        <span>enabled</span>
+      </label>
+    </header>
+
+    <main id="layout">
+      <!-- ── Colonne 1 : création + suivi des agents ─────────────── -->
+      <aside id="col-sessions">
+        <section class="pane">
+          <span class="pane-label">new agent</span>
+          <textarea
+            id="new-task"
+            rows="3"
+            spellcheck="false"
+            placeholder="a computer chore — “archive the newsletters”, “close all these tabs”…"
+          ></textarea>
+          <button id="new-run" type="button">hand it over</button>
+          <p id="new-error" class="error" hidden></p>
+          <p class="fineprint">
+            nothing is touched while you are at the keyboard. the run waits for
+            real idle, and the first key or mouse move you make stops it.
+          </p>
+        </section>
+
+        <section class="pane grow">
+          <span class="pane-label">agents</span>
+          <!-- Le mot « vide » est AVANT la liste : celle-ci prend la hauteur
+               restante, et le mettre après l'aurait collé tout en bas. -->
+          <p id="sessions-empty" class="fineprint">
+            no run yet — describe a chore above, then step away.
+          </p>
+          <div id="session-list"></div>
+        </section>
+      </aside>
+
+      <!-- ── Colonne 2 : activité du run sélectionné ─────────────── -->
+      <section id="col-detail">
+        <div id="detail-head">
+          <h1 id="detail-task">pick a run on the left</h1>
+          <div id="detail-meta">
+            <span id="detail-status" class="badge off">idle</span>
+            <span id="detail-steps" class="meta"></span>
+            <span id="detail-terminals" class="meta"></span>
+            <button id="detail-cancel" type="button" hidden>stop</button>
+          </div>
+        </div>
+
+        <div class="tabs">
+          <button id="tab-calls" class="tab active" type="button">
+            tool calls
+          </button>
+          <button id="tab-term" class="tab" type="button">terminal</button>
+        </div>
+
+        <div id="view-calls" class="scroller">
+          <div id="calls"></div>
+          <p id="calls-empty" class="fineprint">no gesture yet.</p>
+        </div>
+
+        <pre id="view-term" class="scroller term" hidden></pre>
+      </section>
+
+      <!-- ── Colonne 3 : chatbox + réglages ──────────────────────── -->
+      <aside id="col-side">
+        <section class="pane grow">
+          <span class="pane-label">chat</span>
+          <div id="chat" class="scroller"></div>
+          <div class="chat-input">
+            <textarea
+              id="chat-text"
+              rows="2"
+              spellcheck="false"
+              placeholder="tell it something mid-run…"
+            ></textarea>
+            <button id="chat-send" type="button">send</button>
+          </div>
+        </section>
+
+        <section class="pane">
+          <span class="pane-label">limits</span>
+          <label class="setting" for="set-idle">
+            <span>idle before the first move</span>
+            <span class="setting-field">
+              <input id="set-idle" type="number" min="5" max="300" step="5" />
+              <span class="unit">s</span>
+            </span>
+          </label>
+          <label class="setting" for="set-budget">
+            <span>time budget <em>0 = no limit</em></span>
+            <span class="setting-field">
+              <input id="set-budget" type="number" min="0" max="720" step="10" />
+              <span class="unit">min</span>
+            </span>
+          </label>
+          <label class="setting" for="set-steps">
+            <span>steps per run</span>
+            <span class="setting-field">
+              <input id="set-steps" type="number" min="5" max="2000" step="5" />
+              <span class="unit">×</span>
+            </span>
+          </label>
+          <p class="fineprint">
+            the context renews itself: every time the window fills up,
+            sunflower opens a fresh terminal with a handoff summary and drops
+            the model's accumulated state — that is what lets a run last.
+          </p>
+        </section>
+      </aside>
+    </main>
+    <script src="./work.js"></script>
+  </body>
+</html>

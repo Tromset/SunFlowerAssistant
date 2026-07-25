@@ -65,7 +65,10 @@ const TYPE_SCRIPT =
 const KEY_SCRIPT =
   "function run(argv) { Application('System Events').keyCode(parseInt(argv[0], 10)); }";
 
-/** Touches nommées acceptées de la part du modèle → keyCodes macOS. */
+/** Touches nommées acceptées de la part du modèle → keyCodes macOS.
+ *  Les quatre dernières servent au défilement : pas de molette synthétique
+ *  (elle demanderait un binaire natif), mais page down / page up marchent
+ *  partout et restent annulables comme le reste. */
 const KEY_CODES: Record<string, number> = {
   return: 36,
   enter: 36,
@@ -79,7 +82,14 @@ const KEY_CODES: Record<string, number> = {
   down: 125,
   left: 123,
   right: 124,
+  pagedown: 121,
+  pageup: 116,
+  home: 115,
+  end: 119,
 };
+
+/** Noms de touches acceptés, pour le prompt du modèle et la documentation. */
+export const KEY_NAMES: readonly string[] = Object.keys(KEY_CODES);
 
 function runOsa(
   script: string,
