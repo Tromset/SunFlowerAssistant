@@ -102,6 +102,7 @@ body {
 
 /* ---- Formulaires ---- */
 textarea,
+select,
 input[type="number"] {
   font-family: inherit;
   font-size: 12.5px;
@@ -118,8 +119,15 @@ textarea::placeholder {
   color: var(--text-on-dark-mute);
 }
 textarea:focus,
+select:focus,
 input[type="number"]:focus {
   border-color: var(--border-yellow);
+}
+/* La liste déroulante native rend son menu en clair : garder un fond sombre
+   sur les options, sinon on obtient du crème sur du crème. */
+select option {
+  color: var(--ink, #1c1a14);
+  background: var(--cream);
 }
 button {
   font-family: inherit;
@@ -445,6 +453,10 @@ button:disabled {
 .setting-field input {
   width: 68px;
   text-align: right;
+  padding: 4px 6px;
+}
+.setting-field select {
+  width: auto;
   padding: 4px 6px;
 }
 .unit {

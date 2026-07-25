@@ -270,9 +270,10 @@ export function createSessionMachine(deps: MachineDeps): SessionMachine {
       }
       const work = parser.work();
       if (work !== null) {
-        // Corvée d'ordinateur [WORK:…] : remise au work runner (opt-in,
-        // gardé par la présence). La session vocale, elle, se clôt sur la
-        // petite phrase d'annonce déjà streamée par le modèle.
+        // Corvée d'ordinateur [WORK:…] : remise au work runner (opt-in ; il
+        // s'y met tout de suite et rend le curseur dès qu'on s'en sert). La
+        // session vocale, elle, se clôt sur la petite phrase d'annonce déjà
+        // streamée par le modèle.
         phase = "responding";
         if (!deps.workEnabled()) {
           // Éteint par défaut : une phrase courte, et où l'allumer.
@@ -294,7 +295,7 @@ export function createSessionMachine(deps: MachineDeps): SessionMachine {
           if (ack) {
             deps.answerDone(ack);
           } else {
-            const line = "on it — I'll start as soon as you step away.";
+            const line = "on it — starting now.";
             deps.answerReset();
             deps.answerToken(line);
             deps.answerDone(line);

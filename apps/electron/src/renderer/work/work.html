@@ -45,7 +45,7 @@
           <!-- Le mot « vide » est AVANT la liste : celle-ci prend la hauteur
                restante, et le mettre après l'aurait collé tout en bas. -->
           <p id="sessions-empty" class="fineprint">
-            no run yet — describe a chore above, then step away.
+            no run yet — describe a chore above and it starts on it.
           </p>
           <div id="session-list"></div>
         </section>
@@ -96,10 +96,19 @@
 
         <section class="pane">
           <span class="pane-label">limits</span>
-          <label class="setting" for="set-idle">
-            <span>idle before the first move</span>
+          <label class="setting" for="set-on-input">
+            <span>when you use the mac</span>
             <span class="setting-field">
-              <input id="set-idle" type="number" min="5" max="300" step="5" />
+              <select id="set-on-input">
+                <option value="pause">pause, then pick up again</option>
+                <option value="stop">stop the run</option>
+              </select>
+            </span>
+          </label>
+          <label class="setting" for="set-idle">
+            <span>wait for you to leave first <em>0 = start now</em></span>
+            <span class="setting-field">
+              <input id="set-idle" type="number" min="0" max="300" step="5" />
               <span class="unit">s</span>
             </span>
           </label>
@@ -117,6 +126,11 @@
               <span class="unit">×</span>
             </span>
           </label>
+          <p class="fineprint">
+            a run starts right away — it does not wait for you to leave. the
+            moment you touch the keyboard or the mouse it hands the cursor
+            straight back, and picks up a couple of seconds after you stop.
+          </p>
           <p class="fineprint">
             the context renews itself: every time the window fills up,
             sunflower opens a fresh terminal with a handoff summary and drops

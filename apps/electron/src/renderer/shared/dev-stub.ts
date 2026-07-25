@@ -3,7 +3,10 @@
 import type { SunflowerBridge } from "../../shared/ipc";
 import type { PanelData } from "../../shared/state";
 import { DEFAULT_CONFIG } from "../../shared/config-schema";
-import { WORK_SETTINGS_BOUNDS } from "../../shared/work";
+import {
+  WORK_ON_USER_INPUT_DEF,
+  WORK_SETTINGS_BOUNDS,
+} from "../../shared/work";
 
 const SAMPLE: PanelData = {
   permissions: {
@@ -113,6 +116,7 @@ export function ensureBridge(): void {
         requiredIdleSec: WORK_SETTINGS_BOUNDS.requiredIdleSec.def,
         budgetMin: WORK_SETTINGS_BOUNDS.budgetMin.def,
         maxSteps: WORK_SETTINGS_BOUNDS.maxSteps.def,
+        onUserInput: WORK_ON_USER_INPUT_DEF,
       }),
     workSettingsSet: () =>
       Promise.resolve({
@@ -120,6 +124,7 @@ export function ensureBridge(): void {
         requiredIdleSec: WORK_SETTINGS_BOUNDS.requiredIdleSec.def,
         budgetMin: WORK_SETTINGS_BOUNDS.budgetMin.def,
         maxSteps: WORK_SETTINGS_BOUNDS.maxSteps.def,
+        onUserInput: WORK_ON_USER_INPUT_DEF,
       }),
     // Sunflower-Code : dans un navigateur nu, une session vide au repos —
     // assez pour travailler la mise en page.

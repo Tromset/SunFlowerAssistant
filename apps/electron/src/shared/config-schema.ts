@@ -16,17 +16,22 @@ export interface SunflowerConfig {
    *  au milieu de l'écran). Voir main/windows/companion.ts. */
   companionMode: "follow" | "docked";
   /** Sunflower Work (expérimental) : autoriser la fleur à piloter souris et
-   *  clavier pour une corvée demandée, quand l'utilisateur s'est éloigné.
-   *  FAUX par défaut — opt-in explicite via le menu du tray.
-   *  Voir main/work/runner.ts. */
+   *  clavier pour une corvée demandée. FAUX par défaut — opt-in explicite via
+   *  le menu du tray. Voir main/work/runner.ts. */
   sunflowerWorkEnabled: boolean;
-  /** Secondes d'inactivité exigées avant le premier geste d'un run de travail. */
+  /** Secondes d'inactivité exigées avant le premier geste d'un run de travail.
+   *  0 (défaut) = on s'y met tout de suite, sans attendre un bureau vide ;
+   *  c'est `workOnUserInput` qui évite alors de se battre pour le curseur. */
   workRequiredIdleSec: number;
   /** Budget total d'un run de travail, en minutes (0 = illimité — Work est
    *  fait pour tourner longtemps sur un modèle local). */
   workBudgetMin: number;
   /** Étapes maximum par run de travail. */
   workMaxSteps: number;
+  /** Quand l'utilisateur touche sa machine pendant un run : « pause » (défaut,
+   *  le run rend le curseur et reprend après une accalmie) ou « stop »
+   *  (annulation immédiate — l'ancien comportement). Voir shared/work.ts. */
+  workOnUserInput: "pause" | "stop";
   /** Humeurs contextuelles : le tournesol se donne un petit accessoire selon
    *  l'app au premier plan (casque, popcorn, plaid…). Purement décoratif et
    *  100 % local — voir shared/activity.ts. */
@@ -47,9 +52,10 @@ export const DEFAULT_CONFIG: SunflowerConfig = {
   agentOrbY: 0.5,
   companionMode: "follow",
   sunflowerWorkEnabled: false,
-  workRequiredIdleSec: 20,
+  workRequiredIdleSec: 0,
   workBudgetMin: 120,
   workMaxSteps: 300,
+  workOnUserInput: "pause",
   moodsEnabled: true,
   codePermission: "normal",
   codeMode: "code",

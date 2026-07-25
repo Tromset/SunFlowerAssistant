@@ -1,12 +1,24 @@
 // Sunflower Work : la fleur pilote l'ordinateur pour une corvée non-code
-// (« archive les newsletters »), UNIQUEMENT quand l'utilisateur s'est éloigné.
+// (« archive les newsletters »).
 //
-// Boucle lente et bornée : capture d'écran → un tour de modèle vision qui rend
-// EXACTEMENT une étape JSON → validation/clamp → garde de présence →
-// exécution via clicker.ts (CGEvents en points) → pause de stabilisation →
-// recommencer. Tout est révocable à l'instant : la moindre entrée réelle
-// (presence.ts), le hotkey, une interruption de la machine à états ou la
-// fermeture de l'app tuent l'osascript en vol et la requête.
+// ELLE S'Y MET TOUT DE SUITE. Il n'y a plus à quitter son bureau pour qu'un run
+// démarre : `requiredIdleSec` vaut 0 par défaut, et la phase d'attente ne sert
+// plus qu'à ceux qui la redemandent explicitement. Ce qui rend ça vivable, ce
+// n'est pas d'attendre — c'est de CÉDER LE CURSEUR : dès que l'utilisateur
+// touche sa machine, plus un seul geste ne part, la session passe en `paused`,
+// et elle reprend d'elle-même après une accalmie (QUIET_MS). Personne ne se bat
+// pour la souris, et un run n'est plus perdu parce qu'on a bougé la main.
+// Qui préfère l'ancien réflexe met `onUserInput` sur « stop ».
+//
+// Boucle lente et bornée : on cède le curseur si besoin → capture d'écran → un
+// tour de modèle vision qui rend EXACTEMENT une étape JSON → validation/clamp →
+// on cède le curseur à nouveau (le tour de modèle a duré) → exécution via
+// clicker.ts (CGEvents en points) → pause de stabilisation → recommencer. Tout
+// est révocable à l'instant : le hotkey, une interruption de la machine à états
+// ou la fermeture de l'app tuent l'osascript en vol et la requête.
+//
+// Rien ne sonde quoi que ce soit : l'attente comme la reprise sont assises sur
+// presence.onRealInput (un événement), pas sur un réveil périodique.
 //
 // Deux choses le rendent tenable sur la durée, et c'est tout l'intérêt d'un
 // modèle local :
@@ -44,9 +56,13 @@ import {
 import type { WorkStore } from "./store";
 
 // ---- Garde-fous (lents PAR CONCEPTION) ----------------------------------
-/** S'il reste au clavier au-delà, le run s'annule sans bruit. */
+/** Phase d'attente seulement (`requiredIdleSec > 0`) : s'il reste au clavier
+ *  au-delà, le run s'annule sans bruit. Sans attente demandée, hors jeu. */
 const WAIT_MAX_MS = 120_000;
-const WAIT_POLL_MS = 1000;
+/** Accalmie exigée pour reprendre après que l'utilisateur a touché la machine.
+ *  Assez court pour que le run ne traîne pas derrière une frappe finie, assez
+ *  long pour ne pas se glisser entre deux mots. */
+const QUIET_MS = 2000;
 const TURN_TIMEOUT_MS = 90_000;
 /** Pause de stabilisation entre deux gestes (l'UI doit retomber). */
 const SETTLE_MIN_MS = 1500;
@@ -67,7 +83,8 @@ const TERMINAL_BUDGET_STEPS = 20;
 const HANDOFF_STEPS = 8;
 
 const SYSTEM_PROMPT = [
-  "You are sunflower's computer-driving hand. You run fully locally. The user stepped away and asked you to finish ONE task on their Mac.",
+  "You are sunflower's computer-driving hand. You run fully locally. The user asked you to finish ONE task on their Mac, and you start right away — they may well be sitting there watching you.",
+  "You share the machine with them: your gestures are held back automatically whenever they touch the keyboard or mouse, so the screen may have moved on between your turns. Always judge from the image, never from what you expected.",
   "The attached image is the CURRENT screen. Decide the SINGLE next input action that moves the task forward.",
   'Reply with EXACTLY one JSON object, nothing else: {"action":"click"|"double-click"|"type"|"key"|"wait"|"done","x":0-1,"y":0-1,"text":"...","why":"short"}.',
   "x and y are fractions of the screen width and height (0-1) pointing at the CENTER of the target; they are required for click, double-click and type.",
@@ -344,6 +361,64 @@ export function createWorkRunner(
       signal.addEventListener("abort", onAbort, { once: true });
     });
 
+  /**
+   * Attend `quietMs` SANS la moindre entrée réelle de l'utilisateur, et rend la
+   * main au plus tard au bout de `maxMs` (0 = pas de plafond).
+   *
+   * Événementiel, pas sondeur : un seul timer d'accalmie est armé, et chaque
+   * entrée réelle (presence.onRealInput) l'annule et le ré-arme. Quand personne
+   * ne touche rien, ça ne se réveille pas une seule fois — là où la boucle
+   * `while (idleMs() < …) await sleep(1000)` d'avant se réveillait chaque
+   * seconde pendant toute l'attente. Voir le budget always-on de CLAUDE.md.
+   *
+   * Le plafond est INTERNE et non un Promise.race : sur une course, la promesse
+   * perdante resterait abonnée à onRealInput pour la vie du process — un coût
+   * permanent invisible, exactement ce que ce dépôt refuse. Ici, quelle que
+   * soit la raison de sortie, `done()` désabonne et désarme.
+   *
+   * Rend VRAI si l'accalmie a bien été obtenue, FAUX si on sort par le plafond
+   * ou par une annulation. C'est la promesse qui dit pourquoi elle s'arrête :
+   * relire `idleMs()` après coup se jouerait à la milliseconde près, un
+   * setTimeout pouvant rendre la main juste avant son échéance.
+   */
+  const waitForQuiet = (
+    quietMs: number,
+    signal: AbortSignal,
+    maxMs = 0,
+  ): Promise<boolean> =>
+    new Promise((resolve) => {
+      if (signal.aborted) {
+        resolve(false);
+        return;
+      }
+      let timer: ReturnType<typeof setTimeout> | null = null;
+      let cap: ReturnType<typeof setTimeout> | null = null;
+      const done = (quiet: boolean) => {
+        if (timer) clearTimeout(timer);
+        if (cap) clearTimeout(cap);
+        timer = null;
+        cap = null;
+        unsubQuiet();
+        signal.removeEventListener("abort", onAbort);
+        resolve(quiet);
+      };
+      // Ré-armement sur entrée réelle : le compte à rebours repart de zéro.
+      const unsubQuiet = onRealInput(() => {
+        if (timer) clearTimeout(timer);
+        timer = setTimeout(() => done(true), quietMs);
+      });
+      const onAbort = () => done(false);
+      signal.addEventListener("abort", onAbort, { once: true });
+      // Déjà calme depuis assez longtemps ? On part du reste à courir.
+      const remaining = quietMs - idleMs();
+      if (remaining <= 0) {
+        done(true);
+        return;
+      }
+      if (maxMs > 0) cap = setTimeout(() => done(false), maxMs);
+      timer = setTimeout(() => done(true), remaining);
+    });
+
   const abort = (reason: string) => {
     if (!activeId || cancelReason !== null) return;
     cancelReason = reason;
@@ -384,22 +459,68 @@ export function createWorkRunner(
     const t0 = Date.now();
     const overTime = () => totalMs > 0 && Date.now() - t0 >= totalMs;
     const aborted = () => id !== gen || signal.aborted;
+    /** L'utilisateur a-t-il touché sa machine depuis la dernière étape ? Sert à
+     *  jeter une décision prise sur une capture devenue périmée. */
+    let userActive = false;
     let steps = 0;
-    try {
-      // -- Phase d'attente : on ne bouge pas tant que l'utilisateur est là.
-      store.setStatus(sessionId, "waiting-idle");
+    /** Étapes jetées parce que l'écran avait bougé sous le modèle — comptées
+     *  pour que le message de fin dise la vérité si le budget y passe. */
+    let dropped = 0;
+
+    /** Rend le curseur à l'utilisateur, puis reprend là où on en était.
+     *  No-op en mode « stop » (là, une entrée réelle a déjà tout annulé) et
+     *  quand la machine est déjà calme — c'est `idleMs()` qui tranche, pas le
+     *  drapeau : inutile d'afficher une pause pour une frappe finie depuis
+     *  longtemps (typiquement pendant un long tour de modèle). */
+    const yieldToUser = async (): Promise<void> => {
+      if (settings.onUserInput === "stop" || aborted()) return;
+      if (idleMs() >= QUIET_MS) {
+        userActive = false;
+        return;
+      }
+      store.setStatus(sessionId, "paused");
       announce();
       deps.broadcast({
         island: "acting",
         pose: "working",
-        message: "waiting for you to step away…",
+        message: "paused — the mac is yours",
       });
-      log(
-        sessionId,
-        "info",
-        `task accepted — "${task}" (waiting for ${settings.requiredIdleSec}s of idle)`,
-      );
-      while (idleMs() < requiredIdleMs) {
+      await waitForQuiet(QUIET_MS, signal);
+      userActive = false;
+      if (aborted()) return;
+      store.setStatus(sessionId, "running");
+      announce();
+      deps.broadcast({
+        island: "acting",
+        pose: "working",
+        message: "picking it back up…",
+      });
+    };
+
+    try {
+      // -- Phase d'attente : ne sert QUE si elle a été demandée (0 par défaut).
+      //    Le cas normal démarre sur-le-champ ; c'est yieldToUser(), plus bas,
+      //    qui empêche de se battre pour le curseur.
+      if (requiredIdleMs > 0) {
+        store.setStatus(sessionId, "waiting-idle");
+        announce();
+        deps.broadcast({
+          island: "acting",
+          pose: "working",
+          message: "waiting for you to step away…",
+        });
+        log(
+          sessionId,
+          "info",
+          `task accepted — "${task}" (waiting for ${settings.requiredIdleSec}s of idle)`,
+        );
+        // Assez calme, ou la patience est épuisée : deux timers armés une fois,
+        // pas un réveil par seconde.
+        const wentQuiet = await waitForQuiet(
+          requiredIdleMs,
+          signal,
+          WAIT_MAX_MS,
+        );
         if (aborted()) {
           finish(id, sessionId, {
             status: "aborted",
@@ -409,7 +530,7 @@ export function createWorkRunner(
           });
           return;
         }
-        if (Date.now() - t0 >= WAIT_MAX_MS) {
+        if (!wentQuiet) {
           finish(id, sessionId, {
             status: "aborted",
             task,
@@ -418,12 +539,18 @@ export function createWorkRunner(
           });
           return;
         }
-        await sleep(WAIT_POLL_MS, signal);
+      } else {
+        log(sessionId, "info", `task accepted — "${task}" (starting now)`);
       }
-      // -- L'utilisateur est parti : la moindre entrée réelle annule tout.
-      unsubInput = onRealInput(() =>
-        abort("you came back — hands off, all yours."),
-      );
+      // -- Une entrée réelle : on rend le curseur, ou on abandonne. Le choix
+      //    est à l'utilisateur (`onUserInput`), le défaut est de rendre.
+      unsubInput = onRealInput(() => {
+        if (settings.onUserInput === "stop") {
+          abort("you came back — hands off, all yours.");
+          return;
+        }
+        userActive = true;
+      });
       store.setStatus(sessionId, "running");
       store.openTerminal(sessionId);
       announce();
@@ -461,6 +588,10 @@ export function createWorkRunner(
       };
 
       for (let i = 1; i <= maxSteps; i++) {
+        if (aborted()) break;
+        // Ne pas photographier un écran que l'utilisateur est en train de
+        // changer : la décision du modèle porterait sur une image périmée.
+        await yieldToUser();
         if (aborted()) break;
         if (overTime()) {
           finish(id, sessionId, {
@@ -548,6 +679,21 @@ export function createWorkRunner(
           });
           return;
         }
+        // L'utilisateur a touché sa machine PENDANT le tour de modèle : la
+        // capture qui a servi à décider ne vaut plus rien. On rend le curseur
+        // et on rejuge sur une image neuve, plutôt que de cliquer à l'aveugle
+        // aux coordonnées d'un écran qui a bougé.
+        if (userActive) {
+          dropped++;
+          log(
+            sessionId,
+            "info",
+            "you took the mac back mid-thought — dropping this step and looking again",
+          );
+          await yieldToUser();
+          if (aborted()) break;
+          continue;
+        }
         // Étape annoncée : île + vignette « working » (casque + clé).
         deps.broadcast({
           island: "acting",
@@ -579,7 +725,9 @@ export function createWorkRunner(
           } else if (step.action === "type") {
             await clickAt(px, py);
             await sleep(300, signal);
-            if (!aborted()) await typeText(step.text ?? "");
+            // La frappe s'interrompt entre deux tranches si l'utilisateur
+            // reprend la main — on ne tape pas par-dessus lui.
+            if (!aborted()) await typeText(step.text ?? "", () => userActive);
           } else {
             await pressKey(step.text ?? "");
           }
@@ -620,7 +768,10 @@ export function createWorkRunner(
       finish(id, sessionId, {
         status: "failed",
         task,
-        message: `step budget spent (${maxSteps}) without finishing.`,
+        message:
+          dropped > 0
+            ? `step budget spent (${maxSteps}) without finishing — ${dropped} of them dropped because you were using the mac.`
+            : `step budget spent (${maxSteps}) without finishing.`,
         steps,
       });
     } catch (err) {

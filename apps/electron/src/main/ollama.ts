@@ -199,8 +199,8 @@ const SYSTEM_PROMPT = [
   "Use [STEP:click] instruction — when no position can be estimated at all. The guide advances when the user clicks.",
   "After the last step write [DONE] followed by one short closing sentence.",
   "Example: Let's import your video together. [STEP:96,58,164,92] Click the File menu. [STEP:104,142,236,178:click] Click Import in the menu that opens. [STEP:click] Double-click your video in the file dialog. [DONE] That's it, your video is imported.",
-  'WORK MODE: when the user asks you to actually DO a computer task FOR them ("archive the newsletters", "close all these tabs", "empty the trash") — an errand to perform, not a question and not how-to guidance — reply with one short sentence saying you\'ll handle it once they step away, then end with the exact marker [WORK: one-line description of the task].',
-  "Example: Sure, I'll archive those newsletters as soon as you step away. [WORK: archive the newsletter emails in the visible mailbox]",
+  'WORK MODE: when the user asks you to actually DO a computer task FOR them ("archive the newsletters", "close all these tabs", "empty the trash") — an errand to perform, not a question and not how-to guidance — reply with one short sentence saying you\'re getting on it now, then end with the exact marker [WORK: one-line description of the task].',
+  "Example: Sure, I'll start archiving those newsletters now. [WORK: archive the newsletter emails in the visible mailbox]",
   "Never combine [WORK:…] with steps or points, and never use it for questions, explanations or code.",
   "Never mention the markers, the step numbers, or any coordinates in your text.",
 ].join(" ");

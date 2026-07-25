@@ -155,10 +155,21 @@ export function doubleClickAt(x: number, y: number): Promise<void> {
 }
 
 /** Frappe le texte dans l'élément qui a le focus (System Events), en
- *  tranches courtes pour que la garde de présence se réarme entre deux. */
-export async function typeText(text: string): Promise<void> {
+ *  tranches courtes pour que la garde de présence se réarme entre deux.
+ *
+ *  `shouldStop` est consulté ENTRE deux tranches : c'est exactement la fenêtre
+ *  où un vrai appui de touche est visible (pendant une tranche, la famille
+ *  clavier est masquée pour ne pas confondre notre frappe avec la sienne).
+ *  L'utilisateur s'est remis à taper → on s'arrête là, quitte à laisser un
+ *  texte incomplet : mieux vaut ça que d'écrire dans le champ qu'il vient de
+ *  choisir. Le run repart d'une capture neuve et voit ce qui a été tapé. */
+export async function typeText(
+  text: string,
+  shouldStop?: () => boolean,
+): Promise<void> {
   const t = text.slice(0, MAX_TYPE_CHARS);
   for (let i = 0; i < t.length; i += TYPE_CHUNK_CHARS) {
+    if (i > 0 && shouldStop?.()) return;
     await runOsa(
       TYPE_SCRIPT,
       [t.slice(i, i + TYPE_CHUNK_CHARS)],

@@ -26,6 +26,7 @@ import {
 } from "../shared/code";
 import {
   clampWorkSettings,
+  WORK_ACTIVE_STATUSES,
   type WorkEvent,
   type WorkSettings,
 } from "../shared/work";
@@ -265,6 +266,7 @@ async function main(): Promise<void> {
       requiredIdleSec: cfg.workRequiredIdleSec,
       budgetMin: cfg.workBudgetMin,
       maxSteps: cfg.workMaxSteps,
+      onUserInput: cfg.workOnUserInput,
     };
   };
   const saveWorkSettings = (patch: Partial<WorkSettings>): WorkSettings => {
@@ -274,6 +276,7 @@ async function main(): Promise<void> {
       workRequiredIdleSec: next.requiredIdleSec,
       workBudgetMin: next.budgetMin,
       workMaxSteps: next.maxSteps,
+      workOnUserInput: next.onUserInput,
     });
     return next;
   };
@@ -984,7 +987,7 @@ async function main(): Promise<void> {
         const task = args.trim();
         if (!task) {
           const running = workRunner?.list().filter((s) =>
-            ["queued", "waiting-idle", "running"].includes(s.status),
+            WORK_ACTIVE_STATUSES.includes(s.status),
           );
           tui.notice(
             running && running.length > 0
@@ -1001,7 +1004,11 @@ async function main(): Promise<void> {
         }
         const started = workRunner?.start(task);
         if (started) {
-          tui.ok(`work queued — "${task}". step away and it starts.`);
+          tui.ok(
+            getConfig().workRequiredIdleSec > 0
+              ? `work queued — "${task}". step away and it starts.`
+              : `work queued — "${task}". starting now; it hands the cursor back the moment you use it.`,
+          );
         } else {
           tui.warn("work refused it — macOS and the accessibility grant are required.");
         }
