@@ -68,14 +68,19 @@ const POSE_ART: Record<CompanionPose, PixelArt> = {
     état la classe disparaît, l'animation CSS s'arrête et aucun timer ne fuit. */
 const ACTIVITY_CLASSES = ["coding", "reading", "working"] as const;
 
-/* Après 60 s de pose « idle », les animations décoratives infinies (balancement,
-   curseur) sont mises en pause via body.anim-paused — gating ajouté suite à un
-   rapport utilisateur « l'app fait chauffer mon ordinateur ». Tout changement
-   d'état le lève aussitôt. */
+/* Après 60 s de pose « idle » SANS activité, toutes les animations décoratives
+   infinies (balancement, curseur, accessoire d'humeur) sont mises en pause via
+   body.anim-paused — gating ajouté suite à un rapport utilisateur « l'app fait
+   chauffer mon ordinateur ». Tout changement d'état le lève aussitôt. */
 const ANIM_PAUSE_AFTER_MS = 60_000;
+/** Fréquence maximale de réarmement : le mousemove arrive à ~100 Hz. */
+const ANIM_BUMP_MIN_MS = 1000;
 let animPauseTimer: number | null = null;
+let lastPose: CompanionPose = "idle";
+let lastBumpAt = 0;
 
 function armAnimPause(pose: CompanionPose): void {
+  lastPose = pose;
   if (animPauseTimer !== null) {
     window.clearTimeout(animPauseTimer);
     animPauseTimer = null;
@@ -86,6 +91,23 @@ function armAnimPause(pose: CompanionPose): void {
       document.body.classList.add("anim-paused");
     }, ANIM_PAUSE_AFTER_MS);
   }
+}
+
+/* Le compte de 60 s doit mesurer une vraie inactivité, pas le temps écoulé
+   depuis le dernier changement d'état : sinon un accessoire d'humeur se fige
+   au nez de quelqu'un qui est manifestement là. La fenêtre est traversée par
+   la souris avec forward: true, donc elle voit passer les mousemove quand le
+   curseur la survole — ce qui arrive constamment, la fenêtre suivant le
+   curseur avec un temps de retard.
+   Best-effort assumé : une activité au CLAVIER seul, ou le mode docké, ne
+   réarment rien et le gel tombera quand même. C'est le bon sens du compromis
+   — mieux vaut figer une décoration de trop que faire chauffer la machine,
+   et le moindre changement d'état relance tout. */
+function bumpAnimPause(): void {
+  const now = performance.now();
+  if (now - lastBumpAt < ANIM_BUMP_MIN_MS) return;
+  lastBumpAt = now;
+  armAnimPause(lastPose);
 }
 
 /* ── Humeurs contextuelles ─────────────────────────────────────────────
@@ -132,8 +154,10 @@ function render(): void {
   for (const cls of ACTIVITY_CONTEXTS) {
     flower.classList.toggle(`mood-${cls}`, moodOn && mood === cls);
   }
-  // Une humeur animée n'est pas du repos : ne pas geler ses animations.
-  armAnimPause(moodOn ? "answering" : pose);
+  // Une humeur est décorative comme le reste : elle s'anime tant qu'on est là,
+  // et se fige avec tout le monde après 60 s d'inactivité. Lui faire passer
+  // « answering » ici désarmait le gel POUR TOUJOURS dès le premier accessoire.
+  armAnimPause(pose);
 }
 
 function renderPose(next: CompanionPose): void {
@@ -212,6 +236,7 @@ const setHover = (next: boolean): void => {
   window.sunflower.companionSetHover(next);
 };
 document.addEventListener("mousemove", (e) => {
+  bumpAnimPause();
   const r = flower.getBoundingClientRect();
   setHover(
     e.clientX >= r.left &&

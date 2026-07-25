@@ -30,7 +30,6 @@ import { createAgentRunner, type AgentRunner } from "./agents/runner";
 import { createActivityWatcher, type ActivityWatcher } from "./activity";
 import { createCodeSession, type CodeSession } from "./code/session";
 import { createWorkStore } from "./work/store";
-import { idleMs } from "./presence";
 import {
   openWorkWindow,
   releaseWorkWindow,
@@ -657,10 +656,9 @@ async function main(): Promise<void> {
   // ---- Humeurs contextuelles du compagnon ------------------------------
   // Purement décoratif : l'app au premier plan (et le site, dans un
   // navigateur) donne un petit accessoire au tournesol. Rien ne sort de la
-  // machine, rien n'est écrit, et le sondage s'arrête dès que le compagnon
+  // machine, rien n'est écrit, et l'observation s'arrête dès que le compagnon
   // est masqué ou que l'option est décochée. Voir shared/activity.ts.
   activity = createActivityWatcher({
-    idleMs,
     onChange: (snapshot: ActivitySnapshot) => {
       sendTo(companion, CH.activity, snapshot);
       sendTo(panel, CH.activity, snapshot);

@@ -92,14 +92,25 @@ export function initHotkey(handlers: {
   mod.uIOhook.on("mouseup", () => noteGlobalInput("mouse"));
   mod.uIOhook.on("mousemove", () => noteGlobalInput("mouse"));
   mod.uIOhook.on("wheel", () => noteGlobalInput("mouse"));
-  if (!tryStart()) {
-    retryTimer = setInterval(() => {
-      if (tryStart() && retryTimer) {
-        clearInterval(retryTimer);
-        retryTimer = null;
-      }
-    }, 3000);
-  }
+  // Accessibilité pas encore accordée : on réessaie, mais en RALENTISSANT.
+  // La première version tournait à 3 s pour toujours — une charge
+  // toujours-active de plus, jamais déclarée (voir le budget de CLAUDE.md).
+  // Un `setInterval` figé ne peut pas ralentir : c'est une chaîne de
+  // `setTimeout`, qui s'arrête net dès que le hook démarre.
+  if (!tryStart()) scheduleRetry(RETRY_START_MS);
+}
+
+/** Cadence de départ, puis ×2 à chaque échec, plafonnée. */
+const RETRY_START_MS = 3000;
+const RETRY_MAX_MS = 60_000;
+
+function scheduleRetry(delayMs: number): void {
+  retryTimer = setTimeout(() => {
+    retryTimer = null;
+    if (tryStart()) return; // accordée : plus rien à réessayer
+    scheduleRetry(Math.min(delayMs * 2, RETRY_MAX_MS));
+  }, delayMs);
+  retryTimer.unref();
 }
 
 function tryStart(): boolean {
@@ -116,7 +127,10 @@ function tryStart(): boolean {
 }
 
 export function stopHotkey(): void {
-  if (retryTimer) clearInterval(retryTimer);
+  if (retryTimer) {
+    clearTimeout(retryTimer);
+    retryTimer = null;
+  }
   if (started && mod) {
     try {
       mod.uIOhook.stop();
