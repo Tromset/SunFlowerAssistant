@@ -10,6 +10,7 @@ import {
   watch as fsWatch,
   writeFileSync,
 } from "node:fs";
+import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -88,13 +89,29 @@ const configs = [
   },
 ];
 
+// Budget « always-on » (voir check-loops.mjs) : contrôlé À CHAQUE build, donc
+// à chaque `pnpm start`. C'est le seul endroit où il s'exécute forcément — ce
+// dépôt n'a pas de CI, et un contrôle que personne ne lance est pire que pas
+// de contrôle du tout. En --watch il n'avertit que, pour ne pas bloquer une
+// itération en cours.
+const checkLoops = () => {
+  const check = spawnSync(
+    process.execPath,
+    [path.join(root, "scripts", "check-loops.mjs")],
+    { cwd: root, stdio: "inherit" },
+  );
+  return check.status === 0;
+};
+
 rmSync(path.join(root, "dist"), { recursive: true, force: true });
 
 if (!watch) {
+  if (!checkLoops()) process.exit(1);
   await Promise.all(configs.map((c) => build(c)));
   copyStatics();
   markBuildOk();
 } else {
+  checkLoops();
   let child = null;
   let killing = false;
   const spawnApp = () => {

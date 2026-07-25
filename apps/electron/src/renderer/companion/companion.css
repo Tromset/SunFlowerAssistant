@@ -475,12 +475,24 @@ body.flip #row {
 /* ── Pause d'inactivité ────────────────────────────────────────────────
    Après 60 s de pose idle (voir companion.ts), les animations décoratives
    infinies sont figées : zéro travail de compositing quand personne ne
-   regarde. Tout changement d'état retire la classe et tout repart. */
-body.anim-paused #flower-svg.sway,
-body.anim-paused #caret,
-body.anim-paused .bee,
-body.anim-paused .bee-sprite {
-  animation-play-state: paused;
+   regarde. Tout changement d'état retire la classe et tout repart.
+
+   La règle est un JOKER, pas une liste de sélecteurs : la première version
+   énumérait sway/caret/abeilles, et les douze animations d'humeur ajoutées
+   plus tard sont passées à travers sans que personne ne le voie. Une keyframe
+   `infinite` de plus est désormais couverte d'office (même parti pris que le
+   bloc prefers-reduced-motion de shared/base.css).
+
+   `!important` est OBLIGATOIRE : la forme courte `animation: …` de chaque
+   règle d'humeur remet implicitement animation-play-state à `running`, et
+   `#flower.mood-coding .sf-typer` (1 id, 2 classes) l'emporte en spécificité
+   sur ce joker. Et on fige plutôt qu'on ne supprime — `animation: none`
+   ferait sauter les éléments à leur position de base, visiblement. */
+body.anim-paused,
+body.anim-paused *,
+body.anim-paused *::before,
+body.anim-paused *::after {
+  animation-play-state: paused !important;
 }
 
 /* ── Mode docké ────────────────────────────────────────────────────────

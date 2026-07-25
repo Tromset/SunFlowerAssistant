@@ -13,7 +13,8 @@
     "start": "node scripts/build.mjs && node bin/sunflower.js",
     "dev": "node scripts/build.mjs --watch",
     "build": "node scripts/build.mjs",
-    "check-types": "tsc --noEmit"
+    "check-types": "tsc --noEmit && node scripts/check-loops.mjs",
+    "check-loops": "node scripts/check-loops.mjs"
   },
   "dependencies": {
     "smart-whisper": "0.8.1",

@@ -1,0 +1,146 @@
+{
+  "maxDefaultOnRecurring": 2,
+  "maxDefaultOnProbes": 1,
+  "entries": [
+    {
+      "file": "src/main/windows/companion.ts",
+      "symbol": "setLoop",
+      "kind": "interval",
+      "cadenceMs": 33,
+      "defaultOn": true,
+      "probesEnvironment": true,
+      "stops": "docké, fenêtre masquée ou mode hold — setLoop(null) ; retombe à 166 ms après 3 s de curseur immobile",
+      "why": "la fleur suit le curseur : il n'existe aucun événement pour ça, c'est la seule sonde permanente qu'on s'autorise"
+    },
+    {
+      "file": "src/main/watchdog.ts",
+      "symbol": "createWatchdog",
+      "kind": "interval",
+      "cadenceMs": 5000,
+      "defaultOn": true,
+      "probesEnvironment": false,
+      "stops": "dispose() sur before-quit ; le timer est unref()",
+      "why": "échantillonne notre propre consommation — c'est la trace qu'on relit quand un rapport « ça chauffe » arrive"
+    },
+    {
+      "file": "src/main/index.ts",
+      "symbol": "ensureStatusLoop",
+      "kind": "interval",
+      "cadenceMs": 3000,
+      "defaultOn": false,
+      "probesEnvironment": true,
+      "stops": "se coupe seul au premier tick où ni le panneau ni l'accueil ne sont visibles",
+      "why": "rafraîchit permissions et état d'Ollama pendant que le panneau est ouvert ; tourne en continu pendant l'accueil du premier lancement"
+    },
+    {
+      "file": "src/main/tui.ts",
+      "symbol": "startSpinner",
+      "kind": "interval",
+      "cadenceMs": 120,
+      "defaultOn": false,
+      "probesEnvironment": false,
+      "stops": "stopSpinner() à chaque fin de phase (idle / answering / error / done) et dispose()",
+      "why": "le spinner du terminal pendant qu'une réponse se fabrique"
+    },
+    {
+      "file": "src/main/guide-runner.ts",
+      "symbol": "enterStep",
+      "kind": "interval",
+      "cadenceMs": 50,
+      "defaultOn": false,
+      "probesEnvironment": true,
+      "stops": "clearStepArms(), stop(), et extinction du guide après GUIDE_IDLE_MS (150 s)",
+      "why": "détecte l'arrivée du curseur sur la cible d'une étape ; ne vit que pendant un guide"
+    },
+    {
+      "file": "src/main/guide-runner.ts",
+      "symbol": "enterStep",
+      "kind": "timer",
+      "cadenceMs": 6000,
+      "defaultOn": false,
+      "probesEnvironment": false,
+      "stops": "borné par MAX_STEPS (8) et par GUIDE_IDLE_MS",
+      "why": "avance d'étape temporisée quand il n'y a ni hook souris ni cible ; la chaîne s'éteint avec le guide"
+    },
+    {
+      "file": "src/main/hotkey.ts",
+      "symbol": "scheduleRetry",
+      "kind": "timer",
+      "cadenceMs": 3000,
+      "defaultOn": false,
+      "probesEnvironment": true,
+      "stops": "s'arrête net dès que uiohook démarre ; ne tourne QUE si l'Accessibilité est refusée, et la cadence double à chaque échec jusqu'à 60 s",
+      "why": "sans cette relance, accorder l'Accessibilité n'armerait le push-to-talk qu'au redémarrage suivant"
+    },
+    {
+      "file": "src/main/state-machine.ts",
+      "symbol": "hotkeyUp",
+      "kind": "timer",
+      "cadenceMs": 10000,
+      "defaultOn": false,
+      "probesEnvironment": false,
+      "stops": "clearTimers() à chaque transition d'état",
+      "why": "garde-fou « le micro n'a rien envoyé » : un coup par question, pas une chaîne"
+    },
+    {
+      "file": "src/main/work/runner.ts",
+      "symbol": "finish",
+      "kind": "timer",
+      "cadenceMs": 0,
+      "defaultOn": false,
+      "probesEnvironment": false,
+      "stops": "pump() rend la main dès que la file est vide ; Sunflower Work est opt-in (sunflowerWorkEnabled: false)",
+      "why": "enchaîne la session suivante de la file après la fin d'un run"
+    },
+    {
+      "file": "src/main/activity.ts",
+      "symbol": "osascriptProbe",
+      "kind": "subprocess",
+      "cadenceMs": null,
+      "defaultOn": true,
+      "probesEnvironment": true,
+      "stops": "aucun timer : un tir au changement d'app (uniquement si le cache bundle → nom ne connaît pas l'app), plus une relecture d'URL au maximum toutes les 10 s et seulement sur entrée réelle dans un navigateur",
+      "why": "NSWorkspace donne l'événement mais pas le nom localisé ; c'est tout ce qui reste après la suppression du sondage de 8288bd0"
+    },
+    {
+      "file": "src/main/dom-locator.ts",
+      "symbol": "readFrontmostDom",
+      "kind": "subprocess",
+      "cadenceMs": null,
+      "defaultOn": true,
+      "probesEnvironment": true,
+      "stops": "un tir par marqueur [POINT:…] dans une réponse ; SUNFLOWER_NO_DOUBLE_CHECK=1 le coupe",
+      "why": "cale le cadre de pointage sur la boîte réelle de l'élément"
+    },
+    {
+      "file": "src/main/work/clicker.ts",
+      "symbol": "runOsa",
+      "kind": "subprocess",
+      "cadenceMs": null,
+      "defaultOn": false,
+      "probesEnvironment": false,
+      "stops": "un tir par geste ; Sunflower Work est opt-in et n'agit qu'après 20 s d'inactivité réelle",
+      "why": "poster les clics et la frappe pendant une course de Work"
+    },
+    {
+      "file": "src/main/agents/runner.ts",
+      "symbol": "runCommand",
+      "kind": "subprocess",
+      "cadenceMs": null,
+      "defaultOn": false,
+      "probesEnvironment": false,
+      "stops": "un tir par commande explicitement approuvée par l'utilisateur",
+      "why": "exécution d'une proposition d'agent de fond"
+    },
+    {
+      "file": "src/main/code/tools.ts",
+      "symbol": "run",
+      "kind": "subprocess",
+      "cadenceMs": null,
+      "defaultOn": false,
+      "probesEnvironment": false,
+      "stops": "un tir par appel de l'outil bash, filtré par shell-guard et le niveau de permission",
+      "why": "l'outil bash de Sunflower-Code"
+    }
+  ]
+}
