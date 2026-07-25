@@ -9,15 +9,17 @@
 //    relâche dès qu'il remonte pour lire.
 import { ensureBridge } from "../shared/dev-stub";
 import { POSES, pixelArtSvg } from "../../shared/sunflower-pixels";
-import type {
-  WorkChatMessage,
-  WorkEvent,
-  WorkLogLine,
-  WorkSession,
-  WorkSessionSummary,
-  WorkSettings,
-  WorkStatus,
-  WorkToolCall,
+import {
+  WORK_ACTIVE_STATUSES,
+  type WorkChatMessage,
+  type WorkEvent,
+  type WorkLogLine,
+  type WorkOnUserInput,
+  type WorkSession,
+  type WorkSessionSummary,
+  type WorkSettings,
+  type WorkStatus,
+  type WorkToolCall,
 } from "../../shared/work";
 
 ensureBridge();
@@ -51,6 +53,7 @@ const chatSend = $<HTMLButtonElement>("chat-send");
 const setIdle = $<HTMLInputElement>("set-idle");
 const setBudget = $<HTMLInputElement>("set-budget");
 const setSteps = $<HTMLInputElement>("set-steps");
+const setOnInput = $<HTMLSelectElement>("set-on-input");
 
 let sessions: WorkSessionSummary[] = [];
 let selectedId: string | null = null;
@@ -63,13 +66,13 @@ const STATUS_BADGE: Record<WorkStatus, [string, string]> = {
   queued: ["off", "queued"],
   "waiting-idle": ["wait", "waiting for you to leave"],
   running: ["run", "running"],
+  paused: ["wait", "paused — the mac is yours"],
   done: ["ok", "done"],
   aborted: ["off", "stopped"],
   failed: ["bad", "failed"],
 };
 
-const ACTIVE: WorkStatus[] = ["queued", "waiting-idle", "running"];
-const isActive = (s: WorkStatus): boolean => ACTIVE.includes(s);
+const isActive = (s: WorkStatus): boolean => WORK_ACTIVE_STATUSES.includes(s);
 
 function timeOf(at: number): string {
   const d = new Date(at);
@@ -353,6 +356,7 @@ function renderSettings(settings: WorkSettings): void {
   setIdle.value = String(settings.requiredIdleSec);
   setBudget.value = String(settings.budgetMin);
   setSteps.value = String(settings.maxSteps);
+  setOnInput.value = settings.onUserInput;
 }
 
 function pushSettings(patch: Partial<WorkSettings>): void {
@@ -370,6 +374,9 @@ setBudget.addEventListener("change", () =>
 );
 setSteps.addEventListener("change", () =>
   pushSettings({ maxSteps: Number(setSteps.value) }),
+);
+setOnInput.addEventListener("change", () =>
+  pushSettings({ onUserInput: setOnInput.value as WorkOnUserInput }),
 );
 
 // ---- Flux -----------------------------------------------------------------

@@ -79,6 +79,10 @@
         → `main/windows/work.ts` + `renderer/work/*`, registre dans
           `main/work/store.ts`, boucle dans `main/work/runner.ts`.
     + Work sert quand on veut réaliser une tâche sans toucher à son PC et qu'on a pas besoin de résultats immédiats comme avec [Claude Cowork](5) ou [ChatGPT Work](6)
+        → et il n'attend plus qu'on parte pour s'y mettre : un run démarre
+          sur-le-champ, puis rend le curseur dès qu'on se sert de la machine et
+          reprend après deux secondes de calme (`onUserInput`, défaut « pause »).
+          L'ancien « attends que je sois parti » reste réglable dans l'app Work.
 
 
 

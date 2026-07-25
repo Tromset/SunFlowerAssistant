@@ -223,9 +223,19 @@ const workSub = document.getElementById("work-sub")!;
 
 function renderWork(settings: WorkSettings): void {
   workEnable.checked = settings.enabled;
-  workSub.textContent = settings.enabled
-    ? `on · ${settings.requiredIdleSec}s idle · ${settings.maxSteps} steps max`
-    : "off — nothing is ever touched";
+  if (!settings.enabled) {
+    workSub.textContent = "off — nothing is ever touched";
+    return;
+  }
+  // Le départ est immédiat par défaut ; le dire, sinon l'ancien « 20s idle »
+  // laissait croire qu'il faut quitter son bureau.
+  const start =
+    settings.requiredIdleSec > 0
+      ? `starts after ${settings.requiredIdleSec}s idle`
+      : "starts right away";
+  const back =
+    settings.onUserInput === "stop" ? "stops when you're back" : "yields to you";
+  workSub.textContent = `on · ${start} · ${back} · ${settings.maxSteps} steps max`;
 }
 
 workEnable.addEventListener("change", () => {

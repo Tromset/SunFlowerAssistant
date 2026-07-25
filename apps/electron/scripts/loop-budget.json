@@ -119,7 +119,7 @@
       "cadenceMs": null,
       "defaultOn": false,
       "probesEnvironment": false,
-      "stops": "un tir par geste ; Sunflower Work est opt-in et n'agit qu'après 20 s d'inactivité réelle",
+      "stops": "un tir par geste ; Sunflower Work est opt-in, et plus un seul geste ne part dès que l'utilisateur touche sa machine (presence.onRealInput → session en pause)",
       "why": "poster les clics et la frappe pendant une course de Work"
     },
     {
