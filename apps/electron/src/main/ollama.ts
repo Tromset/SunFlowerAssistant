@@ -1,6 +1,7 @@
 // Client Ollama direct (100 % local) : /api/tags pour le statut,
 // /api/chat en stream NDJSON pour les réponses.
 import { getConfig } from "./config-store";
+import { budgetFor, type SurfaceBudget } from "../shared/effort";
 
 export class OllamaUserInterrupt extends Error {}
 export class OllamaFailure extends Error {
@@ -72,19 +73,15 @@ async function resolveModel(): Promise<string> {
   return status.pulled ? status.name : getConfig().ollamaModel;
 }
 
-const FIRST_TOKEN_WARM_MS = 45_000; // modèle déjà en mémoire
 const FIRST_TOKEN_COLD_MS = 180_000; // chargement à froid (disque → RAM/VRAM)
 const INTER_TOKEN_MS = 30_000; // silence entre tokens
 const KEEP_ALIVE = "10m";
-// Contexte : capture (~600-2500 tokens visuels qwen3-vl) + prompt + 700 tokens
-// de réponse (plafond NUM_PREDICT, atteint seulement par les plans de guide).
-// Le défaut Ollama (4096) tronque silencieusement ; 32768 (variante serveur,
-// multi-tours + outils) gonflerait RAM et temps de chargement pour rien en
-// mono-tour.
-const NUM_CTX = 8192;
-// Réponses courtes (1-3 phrases) ou plan de guide (≤ 8 lignes d'étapes +
-// intro/clôture ≈ 450 tokens) : 700 laisse de la marge sans rien coûter.
-const NUM_PREDICT = 700;
+// Contexte, plafond de génération et attente à chaud viennent du preset
+// d'effort (shared/effort.ts) : « medium » redonne les valeurs historiques
+// (8192 / 700 / 45 s). Le contexte du compagnon ne bouge pas d'un cran à
+// l'autre — un num_ctx plus large coûte RAM et chargement pour rien en
+// mono-tour ; seul le plafond de réponse suit l'effort.
+const budget = (): SurfaceBudget => budgetFor(getConfig().effort, "companion");
 
 /** GET /api/ps — le modèle est-il déjà chargé ? Toute erreur ⇒ froid. */
 async function isModelLoaded(model: string): Promise<boolean> {
@@ -173,7 +170,7 @@ export function warmModel(): void {
           messages: [],
           stream: false,
           keep_alive: KEEP_ALIVE,
-          options: { num_ctx: NUM_CTX },
+          options: { num_ctx: budget().numCtx },
         }),
       });
       if (res.ok) warmedAt = Date.now();
@@ -260,7 +257,7 @@ export interface ChatOptions {
   /** Prompt système alternatif (défaut : compagnon d'écran). Utilisé par la
    *  double vérification du pointage (point-verifier). */
   system?: string;
-  /** Plafond de génération spécifique (défaut : NUM_PREDICT). */
+  /** Plafond de génération spécifique (défaut : celui du preset d'effort). */
   numPredict?: number;
 }
 
@@ -286,7 +283,7 @@ export async function chat(opts: ChatOptions): Promise<string> {
   let full = "";
   try {
     if (!warm) opts.onStatus?.("loading-model");
-    arm(warm ? FIRST_TOKEN_WARM_MS : FIRST_TOKEN_COLD_MS);
+    arm(warm ? budget().firstTokenMs : FIRST_TOKEN_COLD_MS);
     const res = await fetch(`${ollamaHost()}/api/chat`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -298,8 +295,8 @@ export async function chat(opts: ChatOptions): Promise<string> {
         keep_alive: KEEP_ALIVE,
         options: {
           temperature: 0.4,
-          num_predict: opts.numPredict ?? NUM_PREDICT,
-          num_ctx: NUM_CTX,
+          num_predict: opts.numPredict ?? budget().numPredict,
+          num_ctx: budget().numCtx,
         },
         messages: [
           { role: "system", content: opts.system ?? SYSTEM_PROMPT },

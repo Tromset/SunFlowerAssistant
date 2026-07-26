@@ -17,11 +17,12 @@
 // et repart d'une fenêtre neuve — c'est ce qui permet de coder longtemps avec
 // un modèle 8B.
 import { checkOllama, createThinkStripper, ollamaHost } from "../ollama";
+import { getConfig } from "../config-store";
+import { budgetFor, type SurfaceBudget } from "../../shared/effort";
 import { TOOLS, ToolError, ollamaToolSpecs, toolProtocolHelp } from "./tools";
 import { diffLines, diffTally } from "../../shared/diff";
 import {
   CODE_COMPACT_AT_TOKENS,
-  CODE_MAX_TURNS,
   CODE_TOOLS,
   denyReason,
   gateFor,
@@ -40,17 +41,16 @@ import {
 // ---- Bornes --------------------------------------------------------------
 // Les deux que l'app affiche en jauge vivent dans shared/code.ts, pour que le
 // dénominateur montré soit LE plafond réel et pas une copie qui dérive.
-const MAX_TURNS = CODE_MAX_TURNS;
 const COMPACT_AT_TOKENS = CODE_COMPACT_AT_TOKENS;
 /** Appels d'outils servis dans un même tour. */
 const MAX_CALLS_PER_TURN = 4;
-/** Premier token : le chargement à froid d'un modèle local prend son temps. */
-const FIRST_TOKEN_MS = 300_000;
 /** Silence entre deux paquets streamés : au-delà, c'est une panne. */
 const INTER_CHUNK_MS = 90_000;
-/** Fenêtre de contexte demandée à Ollama. */
-const NUM_CTX = 16_384;
-const NUM_PREDICT = 2048;
+/** Tours, contexte, plafond de génération et attente du premier token
+ *  viennent du preset d'effort (shared/effort.ts) : « medium » redonne les
+ *  valeurs historiques (24 tours / 16384 / 2048 / 300 s). Relu à chaque tour,
+ *  pour qu'un `/effort high` en pleine session prenne au tour suivant. */
+const budget = (): SurfaceBudget => budgetFor(getConfig().effort, "code");
 /** Résultat d'outil rendu au modèle (l'affichage en garde moins). */
 const MAX_TOOL_RESULT = 20_000;
 /** Résultat d'outil montré au CLI. */
@@ -230,7 +230,7 @@ async function modelTurn(
   let tokens = 0;
   const calls: { name: CodeToolName; args: Record<string, string> }[] = [];
   try {
-    arm(FIRST_TOKEN_MS);
+    arm(budget().firstTokenMs);
     const res = await fetch(`${ollamaHost()}/api/chat`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -240,7 +240,11 @@ async function modelTurn(
         stream: true,
         think: false,
         keep_alive: "10m",
-        options: { temperature: 0.2, num_ctx: NUM_CTX, num_predict: NUM_PREDICT },
+        options: {
+          temperature: 0.2,
+          num_ctx: budget().numCtx,
+          num_predict: budget().numPredict,
+        },
         messages,
         ...(tools && tools.length > 0 ? { tools } : {}),
       }),
@@ -509,7 +513,8 @@ export function createCodeSession(deps: CodeSessionDeps): CodeSession {
     visible.push({ role: "user", content: message });
 
     let answer = "";
-    for (let turn = 1; turn <= MAX_TURNS; turn++) {
+    const maxTurns = budget().maxTurns;
+    for (let turn = 1; turn <= maxTurns; turn++) {
       if (signal.aborted) throw new Error("interrupted");
       if (tokens >= COMPACT_AT_TOKENS) compact();
       setStatus("thinking");
@@ -540,7 +545,7 @@ export function createCodeSession(deps: CodeSessionDeps): CodeSession {
         visible.push({ role: "assistant", content: prose });
         answer = prose;
       }
-      emit({ kind: "answer", text: prose, turn, maxTurns: MAX_TURNS });
+      emit({ kind: "answer", text: prose, turn, maxTurns });
 
       if (calls.length === 0) {
         emit({ kind: "done", text: answer });
@@ -573,7 +578,7 @@ export function createCodeSession(deps: CodeSessionDeps): CodeSession {
     }
     emit({
       kind: "error",
-      message: `stopped after ${MAX_TURNS} turns without a final answer.`,
+      message: `stopped after ${maxTurns} turns without a final answer.`,
     });
   };
 
@@ -647,6 +652,7 @@ export function createCodeSession(deps: CodeSessionDeps): CodeSession {
       turns,
       tokens,
       messages: visible.length,
+      maxTurns: budget().maxTurns,
     }),
     history: () => [...visible],
     busy: () => ctrl !== null,

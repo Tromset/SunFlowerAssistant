@@ -20,6 +20,7 @@ import type { ActivitySnapshot } from "../shared/activity";
 import {
   CODE_MODES,
   CODE_PERMISSIONS,
+  codeMaxTurns,
   type CodeAppEvent,
   type CodeMode,
   type CodePermission,
@@ -208,6 +209,7 @@ async function main(): Promise<void> {
         turns: 0,
         tokens: 0,
         messages: 0,
+        maxTurns: codeMaxTurns(getConfig().effort),
       },
     onEvent: (ev: CodeAppEvent) => sendCode(CH.codeEvent, ev),
   });

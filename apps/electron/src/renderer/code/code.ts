@@ -17,13 +17,13 @@ import { diffLines } from "../../shared/diff";
 import type { DiffLine } from "../../shared/diff";
 import {
   CODE_COMPACT_AT_TOKENS,
-  CODE_MAX_TURNS,
   CODE_MODES,
   CODE_MODE_HELP,
   CODE_PERMISSIONS,
   CODE_PERMISSION_HELP,
   CODE_TOOLS,
   CODE_TOOL_EFFECT,
+  codeMaxTurns,
   denyReason,
   gateFor,
   toolsFor,
@@ -38,6 +38,8 @@ import type {
   CodeSessionStatus,
   CodeToolCall,
 } from "../../shared/code";
+
+import { DEFAULT_CONFIG } from "../../shared/config-schema";
 
 ensureBridge();
 
@@ -90,6 +92,7 @@ let info: CodeSessionInfo = {
   turns: 0,
   tokens: 0,
   messages: 0,
+  maxTurns: codeMaxTurns(DEFAULT_CONFIG.effort),
 };
 let renewals = 0;
 let pending: CodeToolCall | null = null;
@@ -206,9 +209,9 @@ function renderControls(): void {
     toolList.append(row);
   }
 
-  const turnPct = Math.min(100, (info.turns / CODE_MAX_TURNS) * 100);
+  const turnPct = Math.min(100, (info.turns / info.maxTurns) * 100);
   meterTurns.style.width = `${turnPct}%`;
-  meterTurnsValue.textContent = `${info.turns}/${CODE_MAX_TURNS}`;
+  meterTurnsValue.textContent = `${info.turns}/${info.maxTurns}`;
   const tokenPct = Math.min(100, (info.tokens / CODE_COMPACT_AT_TOKENS) * 100);
   meterTokens.style.width = `${tokenPct}%`;
   meterTokensValue.textContent = `${shortTokens(info.tokens)}/${shortTokens(
@@ -226,7 +229,7 @@ function renderHead(): void {
   titleDir.textContent = basename(info.workdir) || "no folder";
   titleDir.title = info.workdir;
   titleNote.textContent = busy()
-    ? `${label} · turn ${info.turns}/${CODE_MAX_TURNS} · ${shortTokens(info.tokens)} tokens`
+    ? `${label} · turn ${info.turns}/${info.maxTurns} · ${shortTokens(info.tokens)} tokens`
     : `${info.mode} · ${info.permission}`;
   // Une session occupée n'accepte pas un second message (une conversation, un
   // tour à la fois) — sauf pendant un accord, où c'est le bandeau qui répond.

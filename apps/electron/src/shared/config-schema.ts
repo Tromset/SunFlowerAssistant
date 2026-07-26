@@ -1,3 +1,5 @@
+import type { Effort } from "./effort";
+
 export interface SunflowerConfig {
   onboarded: boolean;
   ollamaHost: string;
@@ -41,6 +43,12 @@ export interface SunflowerConfig {
   codePermission: "plan" | "normal" | "yolo";
   /** Sunflower-Code : mode de départ du CLI (code / chat / vision / plan). */
   codeMode: "code" | "chat" | "vision" | "plan";
+  /** Combien de tokens et de tours SunFlower s'autorise par tâche. « medium »
+   *  reproduit exactement les budgets historiques — voir shared/effort.ts. */
+  effort: Effort;
+  /** Plafond de temps par tâche, en minutes (0 = aucun). Posé par `/effort 20m`,
+   *  appliqué en coupant l'AbortController du tour en cours. */
+  effortDeadlineMin: number;
 }
 
 export const DEFAULT_CONFIG: SunflowerConfig = {
@@ -59,4 +67,6 @@ export const DEFAULT_CONFIG: SunflowerConfig = {
   moodsEnabled: true,
   codePermission: "normal",
   codeMode: "code",
+  effort: "medium",
+  effortDeadlineMin: 0,
 };
