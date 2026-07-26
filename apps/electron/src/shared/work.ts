@@ -33,14 +33,27 @@ export const WORK_ACTIVE_STATUSES: readonly WorkStatus[] = [
 ] as const;
 
 /** Les gestes que le modèle peut demander — un par tour, jamais plus.
- *  Le défilement passe par `key` (page down / page up), pas par un geste
- *  dédié : une molette synthétique fiable demanderait un binaire natif, alors
- *  qu'une touche marche partout et reste annulable au même titre. */
+ *
+ *  Le répertoire a longtemps tenu en quatre gestes (cliquer, taper, une touche
+ *  nue, attendre), et ça se voyait : la fleur ne savait que cliquer sur des
+ *  choses. Manquaient les trois quarts de ce qu'on fait d'une souris et d'un
+ *  clavier — les modificateurs (⌘C, ⌘V, ⌘F, ⌘L, ⌘T, ⌘W…), la molette, le clic
+ *  droit, le glisser, et le moindre moyen d'ouvrir quoi que ce soit.
+ *
+ *  Le catalogue complet, avec sa grammaire et ses champs requis, vit dans
+ *  main/work/actions.ts : cette union en est le miroir partagé (le registre
+ *  l'indexe, donc en ajouter un nom sans le décrire ne compile pas). */
 export type WorkActionName =
   | "click"
   | "double-click"
+  | "right-click"
   | "type"
   | "key"
+  | "hotkey"
+  | "scroll"
+  | "drag"
+  | "open"
+  | "click-label"
   | "wait"
   | "done";
 
@@ -51,11 +64,18 @@ export interface WorkToolCall {
   /** Numéro d'étape affiché (1-based, continu à travers les renouvellements). */
   step: number;
   action: WorkActionName;
-  /** Fractions d'écran 0..1 (clics et frappes) — absentes sinon. */
+  /** Fractions d'écran 0..1 (clics, frappes, molette, départ d'un glisser) —
+   *  absentes sinon. */
   x?: number;
   y?: number;
-  /** Texte tapé, nom de touche, ou sens de défilement. */
+  /** Arrivée d'un glisser, en fractions d'écran 0..1. */
+  x2?: number;
+  y2?: number;
+  /** Texte tapé, nom de touche, combinaison, sens de défilement, cible d'une
+   *  ouverture, ou libellé d'élément à cliquer — selon l'action. */
   text?: string;
+  /** Crans de molette (`scroll`). */
+  amount?: number;
   /** La justification courte donnée par le modèle. */
   why: string;
   status: "running" | "done" | "error";
