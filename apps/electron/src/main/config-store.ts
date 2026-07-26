@@ -15,10 +15,17 @@ function configPath(): string {
 export function getConfig(): SunflowerConfig {
   if (cached) return cached;
   try {
-    const raw = JSON.parse(
-      readFileSync(configPath(), "utf8"),
-    ) as Partial<SunflowerConfig>;
-    cached = { ...DEFAULT_CONFIG, ...raw };
+    const raw = JSON.parse(readFileSync(configPath(), "utf8")) as Partial<
+      SunflowerConfig
+    > & { agentOrbY?: number };
+    // `agentOrbY` s'appelait ainsi du temps où le rond était celui des agents :
+    // reprendre la position plutôt que de la remettre au milieu de l'écran.
+    const { agentOrbY, ...rest } = raw;
+    cached = {
+      ...DEFAULT_CONFIG,
+      ...(typeof agentOrbY === "number" ? { orbY: agentOrbY } : {}),
+      ...rest,
+    };
   } catch {
     cached = { ...DEFAULT_CONFIG };
   }

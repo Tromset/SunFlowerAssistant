@@ -13,10 +13,7 @@ import { homedir } from "node:os";
 import path from "node:path";
 import { CH, type MicDataPayload, type MicErrorCode } from "../shared/ipc";
 import type { PanelData, PermissionId, StatePayload } from "../shared/state";
-import type {
-  AgentCommandDecision,
-  AgentDecision,
-} from "../shared/agents";
+import type { OrbRun, OrbSource } from "../shared/orb";
 import type { ActivitySnapshot } from "../shared/activity";
 import {
   CODE_COMPACT_AT_TOKENS,
@@ -26,14 +23,15 @@ import {
   type CodeAppEvent,
   type CodeMode,
   type CodePermission,
+  type CodeSessionInfo,
 } from "../shared/code";
 import {
   clampWorkSettings,
   WORK_ACTIVE_STATUSES,
   type WorkEvent,
+  type WorkSessionSummary,
   type WorkSettings,
 } from "../shared/work";
-import { createAgentRunner, type AgentRunner } from "./agents/runner";
 import { createActivityWatcher, type ActivityWatcher } from "./activity";
 import { createCodeSession, type CodeSession } from "./code/session";
 import { createCodeTranscript, type CodeTranscript } from "./code/transcript";
@@ -44,10 +42,10 @@ import {
   workWindow,
 } from "./windows/work";
 import {
-  createAgentOrbController,
-  createAgentOrbWindow,
-  type AgentOrbController,
-} from "./windows/agent-orb";
+  createOrbController,
+  createOrbWindow,
+  type OrbController,
+} from "./windows/orb";
 import { getConfig, setConfig } from "./config-store";
 import { readFrontmostDom } from "./dom-locator";
 import { createGuideRunner } from "./guide-runner";
@@ -175,10 +173,9 @@ async function main(): Promise<void> {
   let onboarding: BrowserWindow | null = null;
   let machine: SessionMachine | null = null;
   let companionCtl: CompanionController | null = null;
-  let agentRunner: AgentRunner | null = null;
   let workRunner: WorkRunner | null = null;
   let orb: BrowserWindow | null = null;
-  let orbCtl: AgentOrbController | null = null;
+  let orbCtl: OrbController | null = null;
   let activity: ActivityWatcher | null = null;
   let codeSession: CodeSession | null = null;
   let quitting = false;
@@ -197,14 +194,6 @@ async function main(): Promise<void> {
     ...args: unknown[]
   ) => {
     if (win && !win.isDestroyed()) win.webContents.send(channel, ...args);
-  };
-
-  // Clic sur le rond des agents : ouvrir le panneau et le placer sur l'onglet
-  // agents (le renderer du panneau est chargé dès le démarrage, même masqué).
-  const openPanelOnAgents = () => {
-    const bounds = trayBounds();
-    if (panel && bounds && !panel.isVisible()) togglePanel(panel, bounds);
-    sendTo(panel, CH.panelFocusAgents);
   };
 
   // ---- Sunflower Work : registre des sessions + réglages ---------------
@@ -477,45 +466,21 @@ async function main(): Promise<void> {
     if (!dir) return null;
     return setCodeWorkdir(dir) ? dir : null;
   });
-  // Agents de code : toute écriture disque passe par agentDecide (accept),
-  // toute exécution de commande par agentCommand (approve) — jamais sans clic.
-  ipcMain.handle(CH.agentsList, () => agentRunner?.list() ?? []);
-  ipcMain.handle(
-    CH.agentStart,
-    (_e, task: string, workdir: string, allowCommands: boolean) =>
-      agentRunner?.start(String(task), String(workdir), Boolean(allowCommands)),
-  );
-  ipcMain.handle(CH.agentGet, (_e, id: string) => agentRunner?.get(id) ?? null);
-  ipcMain.handle(
-    CH.agentDecide,
-    (_e, id: string, filePath: string, decision: AgentDecision) =>
-      agentRunner?.decide(id, filePath, decision) ?? null,
-  );
-  ipcMain.handle(
-    CH.agentCommand,
-    (_e, id: string, commandId: number, decision: AgentCommandDecision) =>
-      agentRunner?.decideCommand(
-        String(id),
-        Number(commandId),
-        decision === "approved" ? "approved" : "denied",
-      ) ?? null,
-  );
-  ipcMain.handle(CH.agentCancel, (_e, id: string) => {
-    agentRunner?.cancel(id);
-  });
-  // Rond des agents : survol (élargir), glisser vertical (repositionner),
-  // clic (ouvrir le panneau). Voir windows/agent-orb.ts.
-  ipcMain.on(CH.agentOrbHoverStart, () => orbCtl?.setExpanded(true));
-  ipcMain.on(CH.agentOrbHoverEnd, () => orbCtl?.setExpanded(false));
-  ipcMain.on(CH.agentOrbDragStart, (_e, y: number) =>
-    orbCtl?.dragStart(Number(y)),
-  );
-  ipcMain.on(CH.agentOrbDragMove, (_e, y: number) =>
-    orbCtl?.dragMove(Number(y)),
-  );
-  ipcMain.on(CH.agentOrbDragEnd, (_e, y: number) => orbCtl?.dragEnd(Number(y)));
-  ipcMain.handle(CH.agentOrbOpen, () => {
-    openPanelOnAgents();
+  // Rond : survol (élargir), glisser vertical (repositionner), clic (ouvrir
+  // l'app du run affiché). Voir windows/orb.ts.
+  ipcMain.on(CH.orbHoverStart, () => orbCtl?.setExpanded(true));
+  ipcMain.on(CH.orbHoverEnd, () => orbCtl?.setExpanded(false));
+  ipcMain.on(CH.orbDragStart, (_e, y: number) => orbCtl?.dragStart(Number(y)));
+  ipcMain.on(CH.orbDragMove, (_e, y: number) => orbCtl?.dragMove(Number(y)));
+  ipcMain.on(CH.orbDragEnd, (_e, y: number) => orbCtl?.dragEnd(Number(y)));
+  ipcMain.handle(CH.orbOpen, async (_e, source: OrbSource) => {
+    if (source === "work") {
+      await openWorkWindow();
+      sendWork(CH.workChanged, workStore.list());
+      return;
+    }
+    await openCodeWindow();
+    codeTranscript.syncInfo();
   });
   // Compagnon : survol de la fleur → fenêtre interactive (double-clic
   // possible) ; hors survol, elle redevient traversée par la souris.
@@ -544,7 +509,7 @@ async function main(): Promise<void> {
   // Envoi de l'état à l'île + pilotage de sa visibilité (masquée à idle,
   // affichée dès qu'on en sort, avec délai de grâce au retour — voir
   // windows/island.ts). Point de passage unique utilisé par la machine à
-  // états et par l'ambiance des agents en arrière-plan.
+  // états et par l'ambiance des runs de travail en arrière-plan.
   const broadcastIsland = (payload: StatePayload) => {
     sendTo(island, CH.state, payload);
     islandVisibility?.setState(payload.island);
@@ -556,10 +521,10 @@ async function main(): Promise<void> {
     void pushStatus();
     ensureStatusLoop();
   });
-  // Rond des agents : masqué au repos, affiché le temps qu'un agent tourne
-  // (piloté par agentRunner.onRunningChange plus bas).
-  orb = await createAgentOrbWindow();
-  orbCtl = createAgentOrbController(orb);
+  // Rond : masqué au repos, affiché le temps qu'un run Code ou Work tourne
+  // (piloté par refreshOrb plus bas).
+  orb = await createOrbWindow();
+  orbCtl = createOrbController(orb);
 
   // Exécuteur de guides : purement géométrique, aucun appel IA par étape.
   const guideRunner = createGuideRunner({
@@ -687,97 +652,94 @@ async function main(): Promise<void> {
     workStart: (task) => workRunner?.start(task) != null,
   });
 
-  // ---- Agents de code en arrière-plan ----------------------------------
   // L'île/le compagnon ne sont touchés qu'au repos : dès qu'une session
   // vocale démarre, la machine à états reprend la main sur l'affichage.
-  let agentIdleTimer: NodeJS.Timeout | null = null;
-  let agentNote: string | null = null;
   const broadcastAmbient = (payload: StatePayload) => {
     broadcastIsland(payload);
     sendTo(companion, CH.state, payload);
   };
-  agentRunner = createAgentRunner({
-    onUpdate: () => {
-      const runs = agentRunner?.list() ?? [];
-      sendTo(panel, CH.agentsChanged, runs);
-      // Même charge utile pour le rond : il en tire le titre + l'état courant.
-      orbCtl?.setStatus(runs);
-    },
-    // Événements fins (tours, tokens, lectures, commandes) : le panneau
-    // streame le transcript/terminal, le rond en dérive son texte d'état.
-    onEvent: (ev) => {
-      sendTo(panel, CH.agentEvent, ev);
-      orbCtl?.pushEvent(ev);
-    },
-    onRunningChange: (running) => {
-      // Le rond suit l'état de la file, indépendamment d'une session vocale.
-      if (running) orbCtl?.show();
-      else orbCtl?.hide();
-      if (agentIdleTimer) {
-        clearTimeout(agentIdleTimer);
-        agentIdleTimer = null;
-      }
-      if (machine?.busy()) return;
-      if (running) {
-        broadcastAmbient({
-          island: "acting",
-          // Vignette « coding » : tournesol + portable animé.
-          pose: "coding",
-          message: "coding agent at work…",
-        });
-      } else if (agentNote) {
-        // Petit mot de fin sur l'île, puis retour au repos.
-        broadcastAmbient({ island: "acting", pose: "idle", message: agentNote });
-        agentNote = null;
-        agentIdleTimer = setTimeout(() => {
-          if (
-            !machine?.busy() &&
-            !agentRunner?.running() &&
-            !workRunner?.active()
-          ) {
-            broadcastAmbient({ island: "idle", pose: "idle" });
-          }
-        }, 4000);
-      } else if (!workRunner?.active()) {
-        // Un run de travail encore actif garde la main sur l'affichage.
-        broadcastAmbient({ island: "idle", pose: "idle" });
-      }
-    },
-    onFinished: (run) => {
-      const short =
-        run.task.length > 60 ? `${run.task.slice(0, 57)}…` : run.task;
-      const body =
-        run.status === "awaiting-review"
-          ? `"${short}" — ${run.proposal.length} file(s) to review in the panel.`
-          : run.status === "failed"
-            ? `"${short}" — failed: ${run.error ?? "unknown error"}`
-            : `"${short}" — finished, nothing to apply.`;
-      agentNote =
-        run.status === "awaiting-review"
-          ? "agent finished — review in the panel"
-          : run.status === "failed"
-            ? "agent failed — see the panel"
-            : "agent finished";
-      if (Notification.isSupported()) {
-        const notif = new Notification({ title: "sunflower agent", body });
-        notif.on("click", () => {
-          const bounds = trayBounds();
-          if (panel && bounds && !panel.isVisible()) togglePanel(panel, bounds);
-        });
-        notif.show();
-      }
-    },
-  });
+
+  // ---- Le rond du bord droit -------------------------------------------
+  // Deux surfaces peuvent travailler sans fenêtre ouverte (Sunflower-Code
+  // depuis le terminal, Sunflower Work en tâche de fond) : le rond est leur
+  // seul témoin. Rien ne tourne en boucle ici — on recalcule à chaque
+  // événement que les deux runners émettent déjà.
+  /** null = rien à montrer. `failed` n'en fait pas partie : le `finally` de
+   *  la session repasse à `idle` dans la foulée, l'afficher ne ferait qu'un
+   *  clignotement avant l'extinction. */
+  const codeOrbRun = (info: CodeSessionInfo): OrbRun | null => {
+    const turn = `turn ${info.turns}/${info.maxTurns}`;
+    const [state, working] =
+      info.status === "thinking"
+        ? ([`${turn} · thinking…`, true] as const)
+        : info.status === "working"
+          ? ([`${turn} · running tools…`, true] as const)
+          : info.status === "awaiting-approval"
+            ? // Une attente d'accord humain n'est pas du travail : le disque
+              // reste allumé, mais l'animation s'arrête.
+              (["approval waiting for you", false] as const)
+            : ([null, false] as const);
+    if (state === null) return null;
+    return {
+      id: "code",
+      source: "code",
+      title: path.basename(info.workdir) || info.workdir,
+      state,
+      active: true,
+      working,
+    };
+  };
+
+  const workOrbRun = (s: WorkSessionSummary): OrbRun => {
+    const [state, working] =
+      s.status === "running"
+        ? ([`step ${s.steps}`, true] as const)
+        : s.status === "waiting-idle"
+          ? (["waiting for you to step away", false] as const)
+          : s.status === "paused"
+            ? (["paused — you're typing", false] as const)
+            : (["queued", false] as const);
+    return {
+      id: s.id,
+      source: "work",
+      title: s.task,
+      state,
+      active: true,
+      working,
+    };
+  };
+
+  /** Dernier état envoyé au rond : les tokens arrivent en rafale sans rien
+   *  changer à ce qu'il affiche, inutile de repeindre à chaque mot. */
+  let lastOrbKey = "";
+  const refreshOrb = (): void => {
+    const runs: OrbRun[] = [];
+    const info = codeSession?.info();
+    const codeRun = info ? codeOrbRun(info) : null;
+    if (codeRun) runs.push(codeRun);
+    for (const s of workStore.list()) {
+      if (WORK_ACTIVE_STATUSES.includes(s.status)) runs.push(workOrbRun(s));
+    }
+    const key = JSON.stringify(runs);
+    if (key === lastOrbKey) return;
+    lastOrbKey = key;
+    orbCtl?.setStatus(runs);
+    if (runs.length > 0) orbCtl?.show();
+    else orbCtl?.hide();
+  };
 
   // ---- Sunflower Work : pilotage souris/clavier (opt-in, présence gardée)
-  // Même politesse d'affichage que les agents : l'île/le compagnon ne sont
-  // touchés qu'au repos — une session vocale reprend toujours la main (et,
-  // de toute façon, taper le hotkey est une entrée réelle qui annule le run).
+  // L'île/le compagnon ne sont touchés qu'au repos — une session vocale
+  // reprend toujours la main (et, de toute façon, taper le hotkey est une
+  // entrée réelle qui annule le run).
   let workIdleTimer: NodeJS.Timeout | null = null;
   workRunner = createWorkRunner(workStore, {
     settings: workSettings,
     saveSettings: saveWorkSettings,
-    onSessionsChanged: (sessions) => sendWork(CH.workChanged, sessions),
+    onSessionsChanged: (sessions) => {
+      sendWork(CH.workChanged, sessions);
+      refreshOrb();
+    },
     broadcast: (payload) => {
       // Mémorisé même quand la machine est occupée : sa retombée au repos
       // ré-émettra ce dernier état (voir machine.broadcast plus haut).
@@ -788,6 +750,7 @@ async function main(): Promise<void> {
     onLog: (line) => tui.log(line),
     onFinished: (result) => {
       lastWorkAmbient = null;
+      refreshOrb();
       const note =
         result.status === "done"
           ? `work finished — ${result.message}`
@@ -798,11 +761,7 @@ async function main(): Promise<void> {
         broadcastAmbient({ island: "acting", pose: "idle", message: note });
         if (workIdleTimer) clearTimeout(workIdleTimer);
         workIdleTimer = setTimeout(() => {
-          if (
-            !machine?.busy() &&
-            !agentRunner?.running() &&
-            !workRunner?.active()
-          ) {
+          if (!machine?.busy() && !workRunner?.active()) {
             broadcastAmbient({ island: "idle", pose: "idle" });
           }
         }, 4000);
@@ -859,6 +818,8 @@ async function main(): Promise<void> {
       // l'app, donc les deux disent la même chose.
       const info = codeSession?.info();
       if (info) tui.setUsage(info.tokens, CODE_COMPACT_AT_TOKENS);
+      // Le rond suit le harnais même quand aucune fenêtre n'est ouverte.
+      refreshOrb();
     },
     capture: async () => {
       const shot = await captureScreenAtCursor();
@@ -869,13 +830,12 @@ async function main(): Promise<void> {
 
   // ---- Arrêt complet ----------------------------------------------------
   // Le bouton « quit » du panneau (et l'entrée du tray) ne se contente pas de
-  // fermer les fenêtres : il coupe TOUTE activité — agents en file, run de
-  // travail en cours, session de code, voix, sondage d'humeur — avant de
-  // rendre la main. Idempotent : before-quit repasse derrière.
+  // fermer les fenêtres : il coupe TOUTE activité — run de travail en cours,
+  // session de code, voix, sondage d'humeur — avant de rendre la main.
+  // Idempotent : before-quit repasse derrière.
   function shutdownEverything(): void {
     workRunner?.cancel("sunflower is quitting.");
     workRunner?.dispose();
-    agentRunner?.dispose();
     codeSession?.dispose();
     activity?.dispose();
     machine?.interrupt();
@@ -977,7 +937,6 @@ async function main(): Promise<void> {
     ["/sessions", "saved sunflower work runs"],
     ["/status", "the status card again"],
     ["/work <task>", "hand a computer chore to sunflower work"],
-    ["/agents", "background coding agents of the panel"],
     ["/quit", "close sunflower"],
   ];
 
@@ -1301,17 +1260,6 @@ async function main(): Promise<void> {
         }
         return;
       }
-      case "agents": {
-        const runs = agentRunner?.list() ?? [];
-        if (runs.length === 0) {
-          tui.notice("no background agent — start one from the panel.");
-          return;
-        }
-        for (const run of runs.slice(0, 10)) {
-          tui.log(`  ${run.status.padEnd(17)} ${run.task}`);
-        }
-        return;
-      }
       case "quit":
       case "exit":
         shutdownEverything();
@@ -1396,7 +1344,6 @@ async function main(): Promise<void> {
     tui.dispose();
     machine?.interrupt();
     workRunner?.dispose();
-    agentRunner?.dispose();
     codeSession?.dispose();
     activity?.dispose();
     companionCtl?.dispose();

@@ -2,7 +2,7 @@
 // tous confinés à UN dossier de travail. Aucun d'eux ne peut lire ni écrire en
 // dehors (chemin absolu ou `..` = refus), aucun n'échappe à la permission du
 // moment (voir permissions.ts), et `bash` passe en plus par la liste noire
-// partagée avec les agents du panneau (shell-guard.ts).
+// mutualisée dans shell-guard.ts.
 //
 // Le contrat est volontairement plat : des arguments texte, un résultat texte.
 // C'est ce qui permet de servir les mêmes outils aux deux dialectes qu'un
@@ -76,7 +76,7 @@ export class ToolError extends Error {}
 // ---- Sécurité chemins ----------------------------------------------------
 /** Résout un chemin relatif DANS le dossier de travail ; jette s'il s'en
  *  échappe (`..`, chemin absolu, lien qui sort). Même garde-fou que le runner
- *  d'agents et qu'Ollama-Code. */
+ *  que le harnais et qu'Ollama-Code. */
 export function resolveInside(workdir: string, rel: string): string {
   const cleaned = String(rel ?? "").trim().replace(/^\.\//, "");
   if (!cleaned) throw new ToolError("path is required.");

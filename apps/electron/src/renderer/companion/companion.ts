@@ -116,7 +116,7 @@ function bumpAnimPause(): void {
    Netflix, plaid devant Figma… (voir shared/activity.ts et main/activity.ts).
    Deux règles strictes :
     - l'humeur ne s'affiche qu'à l'état idle. Dès qu'une session, un guide ou
-      un agent reprend la main, la pose gagne — l'accessoire ne masque jamais
+      un run reprend la main, la pose gagne — l'accessoire ne masque jamais
       un état réel ;
     - comme les vignettes d'activité, tout est en CSS sous une classe portée
       par #flower : hors de l'humeur, la classe part et l'animation s'arrête. */

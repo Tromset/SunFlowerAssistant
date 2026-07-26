@@ -112,7 +112,7 @@ function ollamaHost() {
 
 // ---- Catalogue recommandé --------------------------------------------
 // L'app a besoin de modèles VISION pour les questions sur l'écran, et de
-// modèles texte pour les agents de code. Tailles ≈ (poids Ollama).
+// modèles texte pour le harnais de code. Tailles ≈ (poids Ollama).
 const CATALOG = [
   // Vision
   { name: "qwen3-vl:8b", vision: true, size: "6.6 GB", note: "app default" },
@@ -123,7 +123,7 @@ const CATALOG = [
   { name: "llava:7b", vision: true, size: "4.7 GB", note: "" },
   { name: "llava:13b", vision: true, size: "8.0 GB", note: "" },
   { name: "minicpm-v", vision: true, size: "5.5 GB", note: "" },
-  // Texte (agents de code)
+  // Texte (harnais de code)
   { name: "qwen2.5-coder:7b", vision: false, size: "4.7 GB", note: "coding" },
   { name: "llama3.1:8b", vision: false, size: "4.9 GB", note: "general" },
   { name: "deepseek-r1:7b", vision: false, size: "4.7 GB", note: "reasoning" },

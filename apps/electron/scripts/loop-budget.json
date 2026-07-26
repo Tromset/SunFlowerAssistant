@@ -113,16 +113,6 @@
       "why": "poster les clics et la frappe pendant une course de Work"
     },
     {
-      "file": "src/main/agents/runner.ts",
-      "symbol": "runCommand",
-      "kind": "subprocess",
-      "cadenceMs": null,
-      "defaultOn": false,
-      "probesEnvironment": false,
-      "stops": "un tir par commande explicitement approuvée par l'utilisateur",
-      "why": "exécution d'une proposition d'agent de fond"
-    },
-    {
       "file": "src/main/code/tools.ts",
       "symbol": "run",
       "kind": "subprocess",

@@ -2,10 +2,7 @@ import { contextBridge, ipcRenderer } from "electron";
 import { CH, type MicErrorCode, type SunflowerBridge } from "../shared/ipc";
 import type { PermissionId } from "../shared/state";
 import type { SunflowerConfig } from "../shared/config-schema";
-import type {
-  AgentCommandDecision,
-  AgentDecision,
-} from "../shared/agents";
+import type { OrbSource } from "../shared/orb";
 import type { WorkSettings } from "../shared/work";
 import type { CodeMode, CodePermission } from "../shared/code";
 
@@ -45,34 +42,17 @@ const bridge: SunflowerBridge = {
   downloadWhisper: () => ipcRenderer.invoke(CH.whisperDownload),
   onboardingDone: () => ipcRenderer.invoke(CH.onboardingDone),
   quit: () => ipcRenderer.invoke(CH.appQuit),
-  onAgentsChanged: (cb) =>
-    on(CH.agentsChanged, cb as (...a: unknown[]) => void),
-  onAgentEvent: (cb) => on(CH.agentEvent, cb as (...a: unknown[]) => void),
-  onPanelFocusAgents: (cb) => on(CH.panelFocusAgents, cb),
-  agentsList: () => ipcRenderer.invoke(CH.agentsList),
-  agentStart: (task: string, workdir: string, allowCommands: boolean) =>
-    ipcRenderer.invoke(CH.agentStart, task, workdir, allowCommands),
-  agentGet: (id: string) => ipcRenderer.invoke(CH.agentGet, id),
-  agentDecide: (id: string, path: string, decision: AgentDecision) =>
-    ipcRenderer.invoke(CH.agentDecide, id, path, decision),
-  agentCommand: (
-    id: string,
-    commandId: number,
-    decision: AgentCommandDecision,
-  ) => ipcRenderer.invoke(CH.agentCommand, id, commandId, decision),
-  agentCancel: (id: string) => ipcRenderer.invoke(CH.agentCancel, id),
-  // Petit rond des agents (voir main/windows/agent-orb.ts).
-  onAgentOrbReset: (cb: () => void) =>
-    on(CH.agentOrbReset, cb as (...a: unknown[]) => void),
-  agentOrbHoverStart: () => ipcRenderer.send(CH.agentOrbHoverStart),
-  agentOrbHoverEnd: () => ipcRenderer.send(CH.agentOrbHoverEnd),
-  agentOrbDragStart: (screenY: number) =>
-    ipcRenderer.send(CH.agentOrbDragStart, screenY),
-  agentOrbDragMove: (screenY: number) =>
-    ipcRenderer.send(CH.agentOrbDragMove, screenY),
-  agentOrbDragEnd: (screenY: number) =>
-    ipcRenderer.send(CH.agentOrbDragEnd, screenY),
-  agentOrbOpen: () => ipcRenderer.invoke(CH.agentOrbOpen),
+  // Petit rond du bord droit (voir main/windows/orb.ts).
+  onOrbChanged: (cb) => on(CH.orbChanged, cb as (...a: unknown[]) => void),
+  onOrbReset: (cb: () => void) =>
+    on(CH.orbReset, cb as (...a: unknown[]) => void),
+  orbHoverStart: () => ipcRenderer.send(CH.orbHoverStart),
+  orbHoverEnd: () => ipcRenderer.send(CH.orbHoverEnd),
+  orbDragStart: (screenY: number) =>
+    ipcRenderer.send(CH.orbDragStart, screenY),
+  orbDragMove: (screenY: number) => ipcRenderer.send(CH.orbDragMove, screenY),
+  orbDragEnd: (screenY: number) => ipcRenderer.send(CH.orbDragEnd, screenY),
+  orbOpen: (source: OrbSource) => ipcRenderer.invoke(CH.orbOpen, source),
   // Compagnon dockable (voir main/windows/companion.ts).
   onCompanionDocked: (cb) =>
     on(CH.companionDocked, cb as (...a: unknown[]) => void),

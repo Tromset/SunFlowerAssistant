@@ -192,7 +192,7 @@ const SYSTEM_PROMPT = [
 ].join(" ");
 
 /** Supprime en flux les blocs <think>…</think> (défensif).
- *  Exporté : le runner d'agents streame aussi ses tours (voir agents/runner). */
+ *  Exporté : Sunflower-Code streame aussi ses tours (voir code/session). */
 export function createThinkStripper(): (chunk: string) => string {
   let inThink = false;
   let carry = "";
