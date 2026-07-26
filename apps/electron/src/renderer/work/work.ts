@@ -139,12 +139,18 @@ function callLine(call: WorkToolCall): HTMLElement {
   body.className = "call-body";
   const action = document.createElement("span");
   action.className = "call-action";
-  const at =
-    call.x !== undefined && call.y !== undefined
-      ? ` (${(call.x * 100).toFixed(0)}%, ${(call.y * 100).toFixed(0)}%)`
+  // Un glisser a deux bouts : les montrer tous les deux, sinon la ligne ment
+  // sur ce qui vient de se passer.
+  const pct = (x?: number, y?: number) =>
+    x !== undefined && y !== undefined
+      ? `${(x * 100).toFixed(0)}%, ${(y * 100).toFixed(0)}%`
       : "";
+  const from = pct(call.x, call.y);
+  const to = pct(call.x2, call.y2);
+  const at = from ? (to ? ` (${from} → ${to})` : ` (${from})`) : "";
   const text = call.text ? ` "${call.text.slice(0, 60)}"` : "";
-  action.textContent = `${call.action}${at}${text}`;
+  const amount = call.amount !== undefined ? ` ×${call.amount}` : "";
+  action.textContent = `${call.action}${at}${text}${amount}`;
   body.append(action);
   if (call.why) {
     const why = document.createElement("span");

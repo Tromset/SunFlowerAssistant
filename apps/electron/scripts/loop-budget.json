@@ -99,8 +99,8 @@
       "cadenceMs": null,
       "defaultOn": true,
       "probesEnvironment": true,
-      "stops": "un tir par marqueur [POINT:…] dans une réponse ; SUNFLOWER_NO_DOUBLE_CHECK=1 le coupe",
-      "why": "cale le cadre de pointage sur la boîte réelle de l'élément"
+      "stops": "deux appelants, aucun périodique : un tir par marqueur [POINT:…] dans une réponse (SUNFLOWER_NO_DOUBLE_CHECK=1 le coupe), et un tir par étape d'un run de Work — donc borné par la course, elle-même opt-in ; le script rend la main tout de suite hors navigateur",
+      "why": "cale le cadre de pointage sur la boîte réelle de l'élément, et donne à Work les libellés cliquables au lieu de coordonnées devinées sur un JPEG"
     },
     {
       "file": "src/main/work/clicker.ts",
@@ -110,7 +110,17 @@
       "defaultOn": false,
       "probesEnvironment": false,
       "stops": "un tir par geste ; Sunflower Work est opt-in, et plus un seul geste ne part dès que l'utilisateur touche sa machine (presence.onRealInput → session en pause)",
-      "why": "poster les clics et la frappe pendant une course de Work"
+      "why": "poster les clics, la frappe, la molette, le glisser et les combinaisons pendant une course de Work"
+    },
+    {
+      "file": "src/main/work/clicker.ts",
+      "symbol": "openOnDesktop",
+      "kind": "subprocess",
+      "cadenceMs": null,
+      "defaultOn": false,
+      "probesEnvironment": false,
+      "stops": "un tir par geste `open`, et seulement pour une cible acceptée par open-guard.ts (app hors terminaux et réglages système, ou URL http/https) ; Sunflower Work est opt-in",
+      "why": "le seul geste dont l'effet dépasse le pixel visé : ouvrir l'app ou la page dont la corvée a besoin, au lieu d'espérer qu'elle soit déjà à l'écran"
     },
     {
       "file": "src/main/agents/runner.ts",
