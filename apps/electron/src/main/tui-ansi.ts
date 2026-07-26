@@ -41,6 +41,8 @@ export interface Ink {
   chip: Paint;
   /** Fond clay, texte crème — badge d'alerte. */
   chipWarn: Paint;
+  /** Encre d'une couleur arbitraire de la palette (colonne de rôle). */
+  hex(color: string): Paint;
 }
 
 function hexFg(hex: string): string {
@@ -67,6 +69,7 @@ export function createInk(fancy: boolean): Ink {
       bold: id,
       chip: id,
       chipWarn: id,
+      hex: () => id,
     };
   }
   const truecolor = supportsTrueColor();
@@ -89,6 +92,10 @@ export function createInk(fancy: boolean): Ink {
     chipWarn: truecolor
       ? (s) => `${hexBg(PALETTE.orange)}\x1b[38;2;254;249;237m${s}\x1b[0m`
       : (s) => `\x1b[41;37m${s}\x1b[0m`,
+    // Sans 24 bits, une couleur libre n'a pas d'équivalent honnête dans les
+    // 16 de base : on rend le texte tel quel plutôt que de le peindre faux.
+    hex: (color: string): Paint =>
+      truecolor ? (s) => `${hexFg(color)}${s}\x1b[0m` : (s) => s,
   };
 }
 
@@ -156,6 +163,36 @@ export function box(lines: string[], opts: BoxOptions): string[] {
   }
   out.push(ink.dim(`╰${dash(inner)}╯`));
   return out;
+}
+
+/**
+ * Ne garde que la QUEUE d'un texte en cours d'écriture, mesurée en lignes
+ * réellement occupées à l'écran (retour à la ligne automatique compris).
+ *
+ * Une réponse longue qui grandit sous un bas d'écran fixe finit par pousser
+ * le cadre hors du terminal, et le rendu se met à clignoter parce qu'on
+ * redessine plus de lignes qu'il n'y en a. Couper la tête plutôt que laisser
+ * filer : ce qui compte pendant un flux, c'est la fin.
+ */
+export function tailLines(
+  text: string,
+  maxRows: number,
+  columns: number,
+): { lines: string[]; hidden: number } {
+  const width = Math.max(1, columns);
+  const raw = text.split("\n");
+  const rowsOf = (line: string) =>
+    Math.max(1, Math.ceil(visibleWidth(line) / width));
+  let rows = 0;
+  let start = raw.length;
+  while (start > 0) {
+    const next = rows + rowsOf(raw[start - 1] ?? "");
+    if (next > maxRows && start < raw.length) break;
+    rows = next;
+    start--;
+    if (rows >= maxRows) break;
+  }
+  return { lines: raw.slice(start), hidden: start };
 }
 
 /** Colle deux blocs côte à côte (le dessin à gauche, le texte à droite). */

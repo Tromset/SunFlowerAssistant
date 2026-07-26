@@ -135,6 +135,8 @@ async function main(): Promise<void> {
     codeWorkdir: codeSession?.info().workdir ?? process.cwd(),
     codePermission: getConfig().codePermission,
     workEnabled: getConfig().sunflowerWorkEnabled,
+    effort: getConfig().effort,
+    effortDeadlineMin: getConfig().effortDeadlineMin,
   });
 
   let island: BrowserWindow | null = null;

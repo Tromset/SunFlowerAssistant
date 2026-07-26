@@ -33,16 +33,6 @@
       "why": "rafraîchit permissions et état d'Ollama pendant que le panneau est ouvert ; tourne en continu pendant l'accueil du premier lancement"
     },
     {
-      "file": "src/main/tui.ts",
-      "symbol": "startSpinner",
-      "kind": "interval",
-      "cadenceMs": 120,
-      "defaultOn": false,
-      "probesEnvironment": false,
-      "stops": "stopSpinner() à chaque fin de phase (idle / answering / error / done) et dispose()",
-      "why": "le spinner du terminal pendant qu'une réponse se fabrique"
-    },
-    {
       "file": "src/main/guide-runner.ts",
       "symbol": "enterStep",
       "kind": "interval",
