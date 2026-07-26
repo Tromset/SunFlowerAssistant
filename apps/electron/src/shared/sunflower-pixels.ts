@@ -38,6 +38,10 @@ const O = "#D97757"; // clay accent
 const HL = "#F6E3D7"; // reading glint
 const DK = "#2B2A28"; // hardware near-black (laptop, wrench, loupe rim)
 
+/** La même palette, atteignable depuis l'extérieur : les scripts de build
+    (fabrication du .icns) dessinent avec ces couleurs sans les recopier. */
+export const PALETTE = { Y, B, BK, G1, G2, G3, O, HL, DK } as const;
+
 /** Base flower (idle pose), viewBox 8×9. */
 const BASE: PixelRect[] = [
   { x: 2, y: 0, w: 4, h: 2, c: Y },
@@ -499,6 +503,46 @@ function menubarArt(core: string): PixelArt {
 }
 export const MENUBAR: PixelArt = menubarArt(B);
 export const MENUBAR_DARK: PixelArt = menubarArt(B);
+
+/** Icône de l'app (le .icns du bundle), viewBox 16×16.
+ *
+ *  Pourquoi un art à part plutôt que MENUBAR ou POSES.idle :
+ *   - un iconset macOS veut des carrés, et tous les autres arts sont plus
+ *     hauts que larges (8×9, 12×9, 14×10) ; `pixelArtPng` conserve le ratio
+ *     de la viewBox, il ne recadre pas ;
+ *   - 16 est la seule largeur qui tombe juste : les échelles entières
+ *     1,2,4,8,16,32,64 donnent 16/32/64/128/256/512/1024, soit exactement les
+ *     sept tailles d'un .icns. Une viewBox de 8 ne peut pas faire 1024 sans
+ *     un facteur 128 (bordures floues), une de 9 ne tombe sur aucune.
+ *
+ *  La plaque noire est chanfreinée à la main : un pixel d'art vaut un pixel
+ *  physique à la plus petite taille, donc les coins restent nets au lieu de
+ *  l'anticrénelage baveux qu'un arrondi vectoriel donnerait à 16 px. */
+export const APP_ICON: PixelArt = {
+  vb: [16, 16],
+  layers: [
+    {
+      rects: [
+        // Plaque, de haut en bas : 10 / 14 / 16 / 14 / 10.
+        { x: 3, y: 0, w: 10, h: 1, c: BK },
+        { x: 1, y: 1, w: 14, h: 1, c: BK },
+        { x: 0, y: 2, w: 16, h: 12, c: BK },
+        { x: 1, y: 14, w: 14, h: 1, c: BK },
+        { x: 3, y: 15, w: 10, h: 1, c: BK },
+        // La fleur, BASE relue sur la grille de 16 (facteur 1,5). Le cœur est
+        // posé APRÈS la rangée large : `pixelArtPng` peint dans l'ordre, le
+        // dernier gagne. Tête 12 de large, cœur 4 — le tiers, comme dans BASE.
+        { x: 5, y: 2, w: 6, h: 2, c: Y },
+        { x: 2, y: 4, w: 12, h: 3, c: Y },
+        { x: 5, y: 7, w: 6, h: 2, c: Y },
+        { x: 6, y: 4, w: 4, h: 3, c: B },
+        { x: 7, y: 9, w: 1, h: 4, c: G1 },
+        { x: 8, y: 9, w: 1, h: 4, c: G2 },
+        { x: 6, y: 13, w: 4, h: 1, c: G3 },
+      ],
+    },
+  ],
+};
 
 /** Field sunflower (footers 1a/1e) — simple stem. */
 export const FIELD: PixelArt = {

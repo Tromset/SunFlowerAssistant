@@ -13,6 +13,7 @@
   "scripts": {
     "start": "node scripts/build.mjs && node bin/sunflower.js",
     "make-app": "node scripts/make-app.mjs",
+    "make-icon": "node scripts/make-icon.mjs",
     "dev": "node scripts/build.mjs --watch",
     "build": "node scripts/build.mjs",
     "check-types": "tsc --noEmit && node scripts/check-loops.mjs",
