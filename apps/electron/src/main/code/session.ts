@@ -316,11 +316,17 @@ export interface CodeSession {
    *  surfaces peuvent y répondre : le terminal appelle sans `callId` (il
    *  répond à l'invite qu'il vient d'imprimer), l'app avec l'identifiant de
    *  l'appel, pour qu'un clic en retard ne tranche pas l'accord suivant. */
-  approve(approved: boolean, callId?: number): void;
+  approve(approved: boolean, callId?: number, always?: boolean): void;
   /** Coupe le tour en vol ET la commande en cours. */
   interrupt(): void;
   /** Repart d'une conversation vierge (garde mode/permission/dossier). */
   clear(): void;
+  /** Glisse une note dans le contexte sans déclencher de tour (`/btw`). */
+  note(text: string): void;
+  /** Joint une image au PROCHAIN message (`/image <chemin>`). */
+  attachImage(imageB64: string): void;
+  /** Force un compactage tout de suite (`/compact`). Faux si rien à résumer. */
+  compact(): boolean;
   setMode(mode: CodeMode): void;
   setPermission(permission: CodePermission): void;
   /** Change de dossier de travail (vide la conversation : autre projet). */
@@ -342,14 +348,23 @@ export function createCodeSession(deps: CodeSessionDeps): CodeSession {
   let turns = 0;
   let tokens = 0;
   let callCounter = 0;
+  /** Actions exactes (leur `display`) approuvées pour toute la session par un
+   *  « a » au prompt d'accord. Vidé par clear() et par un changement de
+   *  permission ou de dossier — la règle ne survit pas au contexte qui l'a
+   *  justifiée. */
+  const alwaysAllowed = new Set<string>();
+  /** Image jointe au PROCHAIN message (`/image <chemin>`). */
+  let pendingImage: string | null = null;
   let ctrl: AbortController | null = null;
   let disposed = false;
   /** Accord en attente : un seul à la fois par construction, mais DEUX
    *  surfaces peuvent y répondre (le terminal et l'app dédiée). L'identité de
    *  l'appel voyage donc avec le résolveur, pour qu'un clic en retard sur un
    *  accord déjà tranché tombe dans le vide au lieu de trancher le suivant. */
-  let approvalWaiter: { callId: number; resolve(ok: boolean): void } | null =
-    null;
+  let approvalWaiter: {
+    callId: number;
+    resolve(ok: boolean, always?: boolean): void;
+  } | null = null;
 
   const emit = (ev: CodeEvent) => {
     if (!disposed) deps.onEvent(ev);
@@ -409,7 +424,12 @@ export function createCodeSession(deps: CodeSessionDeps): CodeSession {
       emit({ kind: "tool", call });
       return call;
     }
-    if (gate === "ask") {
+    // « toujours » ne généralise RIEN : la règle porte sur l'action exacte
+    // (même outil, mêmes arguments). Autoriser `bash npm test` une fois pour
+    // toutes n'autorise pas `bash`, et surtout pas `bash rm -rf`.
+    if (gate === "ask" && alwaysAllowed.has(call.display)) {
+      emit({ kind: "tool", call: { ...call, note: "always allowed" } });
+    } else if (gate === "ask") {
       setStatus("awaiting-approval");
       emit({ kind: "approval", call });
       const approved = await new Promise<boolean>((resolve) => {
@@ -417,8 +437,9 @@ export function createCodeSession(deps: CodeSessionDeps): CodeSession {
         signal.addEventListener("abort", onAbort, { once: true });
         approvalWaiter = {
           callId: call.id,
-          resolve: (ok) => {
+          resolve: (ok, always) => {
             signal.removeEventListener("abort", onAbort);
+            if (ok && always === true) alwaysAllowed.add(call.display);
             resolve(ok);
           },
         };
@@ -496,7 +517,12 @@ export function createCodeSession(deps: CodeSessionDeps): CodeSession {
     const signal = ctrl!.signal;
 
     const userMessage: OllamaMessage = { role: "user", content: message };
-    if (mode === "vision" && deps.capture) {
+    // Une image jointe à la main (`/image`) prime sur la capture d'écran :
+    // c'est un choix explicite de l'utilisateur pour CE message.
+    if (pendingImage) {
+      userMessage.images = [pendingImage];
+      pendingImage = null;
+    } else if (mode === "vision" && deps.capture) {
       const shot = await deps.capture().catch(() => null);
       if (shot) userMessage.images = [shot.imageB64];
     }
@@ -582,11 +608,31 @@ export function createCodeSession(deps: CodeSessionDeps): CodeSession {
         return;
       }
       ctrl = new AbortController();
+      // Plafond de temps par tâche (`/effort 20m`). Un seul timer, armé pour
+      // CETTE requête et désarmé au retour : rien ne survit au tour.
+      const deadlineMin = getConfig().effortDeadlineMin;
+      let deadline: NodeJS.Timeout | null = null;
+      let outOfTime = false;
+      if (deadlineMin > 0) {
+        const aborter = ctrl;
+        deadline = setTimeout(
+          () => {
+            outOfTime = true;
+            aborter.abort();
+          },
+          deadlineMin * 60_000,
+        );
+      }
       try {
         await run(text);
       } catch (err) {
         const aborted = ctrl?.signal.aborted ?? false;
-        if (aborted) {
+        if (outOfTime) {
+          emit({
+            kind: "error",
+            message: `stopped after ${deadlineMin}m — the /effort time cap. /effort off removes it.`,
+          });
+        } else if (aborted) {
           emit({ kind: "done", text: "" });
         } else {
           setStatus("failed");
@@ -596,12 +642,29 @@ export function createCodeSession(deps: CodeSessionDeps): CodeSession {
           });
         }
       } finally {
+        if (deadline) clearTimeout(deadline);
         ctrl = null;
         approvalWaiter = null;
         setStatus("idle");
       }
     },
-    approve(approved, callId) {
+    note(text) {
+      const trimmed = text.trim();
+      if (!trimmed || disposed) return;
+      // Rôle utilisateur, pas système : le prompt système est reconstruit à
+      // chaque tour, une note qui s'y glisserait disparaîtrait aussitôt.
+      messages.push({ role: "user", content: `Note from the user: ${trimmed}` });
+      visible.push({ role: "user", content: `(note) ${trimmed}` });
+    },
+    attachImage(imageB64) {
+      pendingImage = imageB64;
+    },
+    compact() {
+      if (messages.length === 0) return false;
+      compact();
+      return true;
+    },
+    approve(approved, callId, always) {
       const waiter = approvalWaiter;
       if (!waiter) return;
       // Sans identifiant — le terminal, qui ne peut répondre qu'à l'invite
@@ -609,7 +672,7 @@ export function createCodeSession(deps: CodeSessionDeps): CodeSession {
       // en cours : un bouton cliqué trop tard ne tranche pas le suivant.
       if (callId !== undefined && callId !== waiter.callId) return;
       approvalWaiter = null;
-      waiter.resolve(approved);
+      waiter.resolve(approved, always);
     },
     interrupt() {
       approvalWaiter?.resolve(false);
@@ -617,6 +680,8 @@ export function createCodeSession(deps: CodeSessionDeps): CodeSession {
       ctrl?.abort();
     },
     clear() {
+      alwaysAllowed.clear();
+      pendingImage = null;
       messages = [];
       visible = [];
       turns = 0;
@@ -627,9 +692,14 @@ export function createCodeSession(deps: CodeSessionDeps): CodeSession {
     },
     setPermission(next) {
       permission = next;
+      // Un accord « toujours » a été donné sous un régime de permission ; il
+      // ne vaut plus rien sous un autre.
+      alwaysAllowed.clear();
     },
     setWorkdir(dir) {
       workdir = dir;
+      alwaysAllowed.clear();
+      pendingImage = null;
       messages = [];
       visible = [];
       turns = 0;
