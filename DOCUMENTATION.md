@@ -1028,7 +1028,7 @@ dependencies, hand-rolled ANSI).
 
 ## Command-line tools
 
-Three bins, all registered by `npm link` from `apps/electron`.
+Four bins, all registered by `npm link` from `apps/electron`.
 
 ### `sunflower`
 
@@ -1050,6 +1050,24 @@ handed to Electron — `main/index.ts` does not guess what a bare argument named
 single-instance lock but its `argv` arrives via `second-instance` and the
 window opens anyway.
 
+### `sunflower-code`
+
+The coding harness, launchable from any folder.
+
+```bash
+sunflower-code                       # harness on the current folder
+sunflower-code --cd ~/other-project  # aim elsewhere without moving
+```
+
+A shim over `bin/sunflower.js`: it appends `--cd $PWD` unless you passed one,
+so the project folder is where you launched it rather than wherever the app
+happened to start. Electron resolution, the rebuild-if-needed check and the
+native-log filtering all stay in the one place that already does them.
+
+`--cd` is read by `workdirFromArgv()` in `main/index.ts`, on both the first
+launch and the `second-instance` path, so aiming at another project while the
+app is already running moves the harness instead of being ignored.
+
 ### `sunflower-models`
 
 Browses what is pulled locally and changes which model Sunflower uses, without
@@ -1070,6 +1088,35 @@ for the coding agents: `qwen2.5-coder:7b`, `llama3.1:8b`, `deepseek-r1:7b`/`8b`.
 "Active" means the `ollamaModel` field of `config.json`; the CLI rewrites
 **just that field** atomically (temp file + rename), leaving everything else
 untouched.
+
+The same work is available without leaving the terminal UI — `/model` opens a
+picker, `/pull` downloads — because both go through the one shared client,
+`lib/ollama-api.cjs`. That file is CommonJS and lives outside `src/` on
+purpose: the bins have to run from a fresh clone, with no build step and no
+Electron, while the main process imports it directly (types in
+`lib/ollama-api.d.cts`) and esbuild bundles it in.
+
+### Packaging: `SunFlower.app`
+
+```bash
+pnpm --filter sunflower make-app   # → apps/electron/dist-app/SunFlower.app
+```
+
+`scripts/make-app.mjs` writes a bundle that **does not contain Electron**. Its
+executable is a shell shim that opens a terminal on the `sunflower` command —
+preferring an already-running Ghostty / iTerm / WezTerm / kitty, else
+Terminal.app — and resolves the command through a login shell, because an app
+launched from the Finder gets a minimal `PATH`. It falls back to
+`node bin/sunflower.js` from the repo when `npm link` hasn't been run.
+
+The consequence is the intended one: Electron inherits the TTY, the TUI is the
+interface, and closing the terminal window closes the flower. `main/index.ts`
+listens for `stdin` `end`/`close` and `SIGHUP` for exactly that — events, never
+a poll of the parent process, which would be a permanent cost to declare in
+`loop-budget.json` — and arms the listeners only when `process.stdin.isTTY`, so
+a non-terminal launch doesn't quit at startup.
+
+Unsigned and un-notarised: first launch needs right-click → **Open**.
 
 ### `sunflower-requirements`
 
@@ -1110,12 +1157,14 @@ sunflower requirements --fix  # also runs pnpm install, the build, and pulls the
 | `agentOrbY` | `0.5` | vertical position of the agent orb, 0–1 |
 | `companionMode` | `"follow"` | `follow` \| `docked` |
 | `sunflowerWorkEnabled` | `false` | **opt-in** for Sunflower Work |
-| `workRequiredIdleSec` | `20` | idle seconds before the first gesture |
+| `workRequiredIdleSec` | `0` | idle seconds before the first gesture (`0` = start now) |
 | `workBudgetMin` | `120` | total run budget, minutes (`0` = unlimited) |
 | `workMaxSteps` | `300` | steps per run |
 | `moodsEnabled` | `true` | contextual accessories |
 | `codePermission` | `"normal"` | `plan` \| `normal` \| `yolo` |
 | `codeMode` | `"code"` | `code` \| `chat` \| `vision` \| `plan` |
+| `effort` | `"medium"` | `low` \| `medium` \| `high` — generation budgets, `shared/effort.ts` |
+| `effortDeadlineMin` | `0` | wall-clock cap per task, minutes (`0` = none) |
 
 **Other paths under `~/Library/Application Support/sunflower/`:**
 
@@ -1124,6 +1173,34 @@ sunflower requirements --fix  # also runs pnpm install, the build, and pulls the
 | `models/` | the Whisper ggml model |
 | `logs/native.log` | filtered whisper.cpp/ggml stderr, rotated at 5 MB |
 | `watchdog/watchdog-YYYY-MM-DD.jsonl` | resource samples, a few days / few MB |
+
+---
+
+## Effort — one set of budgets for four surfaces
+
+`shared/effort.ts` holds `EFFORT_BUDGETS`: for each preset (`low` / `medium` /
+`high`) and each surface (`companion`, `code`, `work`, `agents`), a
+`num_predict`, a `num_ctx`, a turn ceiling and a first-token wait.
+
+Before it existed, those numbers were module constants in four separate files
+(`main/ollama.ts`, `code/session.ts`, `work/runner.ts`, `agents/runner.ts`), so
+answering "why did it stop so early?" meant opening all four. **`medium`
+reproduces the historical values exactly** — changing preset is a deliberate
+act, doing nothing changes nothing.
+
+Two things deliberately do **not** move between presets: the companion's and
+Work's context window (both are single-turn — a wider `num_ctx` would cost RAM
+and load time for nothing), and the first-token waits, which measure how long a
+machine takes to load a model rather than any budget.
+
+Because the turn ceiling is now variable, it travels in
+`CodeSessionInfo.maxTurns` instead of an exported constant: the app's gauge
+reads the ceiling actually in force, so its denominator can't lie the moment
+someone types `/effort high`.
+
+`effortDeadlineMin` is separate — a wall-clock cap per task. It arms **one**
+timer for the request in flight, cleared in the `finally`, so nothing survives
+the turn and nothing needs declaring in the loop budget.
 
 ---
 
