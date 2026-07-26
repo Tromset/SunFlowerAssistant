@@ -24,6 +24,8 @@ import {
 } from "node:fs";
 import path from "node:path";
 import { checkOllama, createThinkStripper, ollamaHost } from "../ollama";
+import { getConfig } from "../config-store";
+import { budgetFor, type SurfaceBudget } from "../../shared/effort";
 import { blockedReason } from "../shell-guard";
 import type {
   AgentCommandDecision,
@@ -38,12 +40,13 @@ import type {
 } from "../../shared/agents";
 
 // ---- Garde-fous --------------------------------------------------------
-const MAX_TURNS = 8; // tours modèle par agent
 const MAX_READS_PER_TURN = 4; // fichiers servis par tour
 const MAX_READ_BYTES = 16_000; // au-delà, contenu tronqué
 const MAX_PROPOSAL_FILES = 10; // fichiers max dans une proposition
 const MAX_LISTING_ENTRIES = 150; // arborescence initiale
-const TURN_TIMEOUT_MS = 300_000; // premier token (chargement à froid possible)
+// Tours, contexte, plafond de génération et attente du premier token viennent
+// du preset d'effort (shared/effort.ts) : « medium » redonne 8 / 16384 / 2048.
+const budget = (): SurfaceBudget => budgetFor(getConfig().effort, "agents");
 const INTER_CHUNK_TIMEOUT_MS = 60_000; // silence entre paquets streamés
 const TOKEN_FLUSH_MS = 100; // regroupe les tokens avant l'IPC (pas 1 event/token)
 const COMMAND_TIMEOUT_MS = 120_000; // par commande approuvée
@@ -53,8 +56,6 @@ const MAX_OUTPUT_EVENT = 2_000; // borne d'un paquet command-output IPC
 // Contexte plus large que le tchat écran (8192) : les tours accumulent des
 // fichiers. Le runner Ollama redémarre en changeant de num_ctx — acceptable
 // pour un travail d'arrière-plan.
-const NUM_CTX = 16_384;
-const NUM_PREDICT = 2048; // par tour ; borne aussi le coût total (× MAX_TURNS)
 
 // Prompt inchangé quand l'exécution n'est pas autorisée : le comportement
 // propose-only historique reste strictement identique.
@@ -220,7 +221,7 @@ async function agentChat(
   const strip = createThinkStripper();
   let full = "";
   try {
-    arm(TURN_TIMEOUT_MS);
+    arm(budget().firstTokenMs);
     const res = await fetch(`${ollamaHost()}/api/chat`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -232,8 +233,8 @@ async function agentChat(
         keep_alive: "10m",
         options: {
           temperature: 0.2,
-          num_ctx: NUM_CTX,
-          num_predict: NUM_PREDICT,
+          num_ctx: budget().numCtx,
+          num_predict: budget().numPredict,
         },
         messages,
       }),
@@ -567,7 +568,7 @@ export function createAgentRunner(deps: AgentRunnerDeps): AgentRunner {
         runId: run.id,
         kind,
         turn,
-        maxTurns: MAX_TURNS,
+        maxTurns: budget().maxTurns,
         detail,
         ...(commandId !== undefined ? { commandId } : {}),
       });
@@ -586,7 +587,8 @@ export function createAgentRunner(deps: AgentRunnerDeps): AgentRunner {
         content: `Task: ${run.task}\n\nProject folder listing:\n${listing || "(empty folder)"}`,
       });
       let nudged = false;
-      for (let turn = 0; turn < MAX_TURNS; turn++) {
+      const maxTurns = budget().maxTurns;
+      for (let turn = 0; turn < maxTurns; turn++) {
         const t = turn + 1;
         event("turn-start", t, "");
         deps.onUpdate(run);
@@ -649,7 +651,7 @@ export function createAgentRunner(deps: AgentRunnerDeps): AgentRunner {
             continue;
           }
         }
-        if (!nudged && turn < MAX_TURNS - 1) {
+        if (!nudged && turn < maxTurns - 1) {
           // Un seul rappel de format ; ensuite la réponse libre fait foi.
           nudged = true;
           push({

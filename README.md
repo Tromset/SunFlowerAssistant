@@ -77,8 +77,40 @@ Or install the global command:
 cd apps/electron
 npm link
 sunflower           # from anywhere
-sunflower code      # same app, with the Sunflower-Code window open on arrival
+sunflower-code      # the coding harness, in whatever folder you're standing in
+sunflower code      # same thing via the main CLI
 ```
+
+`npm link` registers four bins: `sunflower`, `sunflower-code`, `sunflower-models`
+and `sunflower-requirements`. Check with `which sunflower-code`. If your setup
+doesn't do symlinks, one by hand works just as well:
+
+```bash
+ln -s "$PWD/apps/electron/bin/sunflower-code.js" /usr/local/bin/sunflower-code
+```
+
+**Why `sunflower-code` rather than just `sunflower code`:** it passes the folder
+you launched it from, so the harness starts on *that* project instead of making
+you type `/cd` on arrival. `sunflower-code --cd ~/other-project` aims elsewhere
+without moving.
+
+### In the Finder, running in your terminal
+
+```bash
+pnpm --filter sunflower make-app     # writes apps/electron/dist-app/SunFlower.app
+```
+
+Drag it wherever you like. Double-clicking it opens a terminal on `sunflower` —
+so the flower still lives in a terminal, with its TUI, and **closing that
+terminal window closes the flower.** That's the point of the bundle: it does not
+contain Electron and is not a detached app. It finds your preferred terminal if
+one is already running (Ghostty, iTerm, WezTerm, kitty), and falls back to
+Terminal.app.
+
+It's unsigned and un-notarised — it's built on your machine, for your machine —
+so the first launch needs a right-click → **Open**. If a second instance is
+launched while one is already running, the single-instance lock forwards the
+request to the live one instead of starting a rival.
 
 The global command is self-sufficient: launched from a fresh clone (no `node_modules` yet), it runs `pnpm install` itself and then builds, instead of erroring with "run `pnpm install` first".
 
@@ -102,14 +134,22 @@ Screen recording has a macOS quirk: its Settings pane only lists an app *after* 
 When launched from a terminal (`npm start` or `sunflower`), sunflower turns it into a first-class interface — and it's the same black-and-yellow, same pixel sunflower as the windows, drawn in the terminal itself:
 
 - **The startup banner draws the real sunflower.** Not ASCII art approximating it: the very pixel art the app renders as SVG (`shared/sunflower-pixels.ts`) is rasterised into half-block characters (`▀`, one glyph carrying two pixels, each doubled horizontally so the pixels come out square) in 24-bit colour, next to a rounded status card (`╭─ ✿ sunflower ─── v0.1.0 ─╮`) listing model, Ollama host, voice, hotkey, Sunflower-Code and Sunflower Work. Without truecolor it degrades to shape-only blocks; without a TTY, to the historical `[sunflower]` log lines.
-- **A mode badge sits in the prompt** — `ask ❯` talks to the screen companion, `code ❯` / `plan ❯` / `chat ❯` / `vision ❯` talk to Sunflower-Code (below). `/mode` switches.
-- **Slash commands**, in a card of their own under `/help`: `/mode`, `/permission`, `/cd`, `/code`, `/model`, `/status`, `/clear`, `/work <chore>`, `/agents`, `/quit`.
+- **The layout is [Ollama-Code](https://github.com/Tromset/Ollama-Code)'s, repainted in sunflower's colours.** A block-font `SUNFLOWER` wordmark beside the pixel flower, then the status card. Below that, every line carries a **three-character role column** — `you`, `sun`, `sys`, `run`, `err` — always the same width, always in the same place: that's what makes a stream mixing questions, answers, tool calls and notes scannable rather than something you have to decipher line by line.
+- **A persistent bottom chrome**: a status bar (`sunflower · code · qwen3-vl:8b · effort medium · thinking…` on the left, `ctx 12,004/32,768 (37%)` on the right, green under 50 %, yellow past it, red past 75 %) sitting directly above the `❯` input line. Both are the readline prompt, so they're redrawn when something changes and never on a timer.
+- **There is no spinner.** Busy shows as `thinking…` in the status bar. That's straight from the original, and it also means the terminal has no recurring cost at all while you're not using it — the always-on rule in `CLAUDE.md`.
+- **The live stream is bounded.** A long answer keeps only its tail on screen (`… (+12 earlier lines)` above it) so it can never push the bottom chrome off the terminal.
+- **Slash commands**, in a card of their own under `/help`: `/mode`, `/model`, `/pull`, `/effort`, `/permission`, `/cd`, `/btw`, `/image`, `/init`, `/compact`, `/clear`, `/code`, `/sessions`, `/status`, `/work <chore>`, `/agents`, `/quit`.
+- **`/model` with no argument opens a picker** — every model Ollama has on disk, with parameter size, quantization and disk size, the active one marked `● current`. `↑`/`↓` or `j`/`k` to move, `enter` to switch, `esc` to cancel; while it's open it swallows every keystroke, so nothing leaks into the input line. `/model <name>` switches directly but checks the name against what's actually installed first, and `/pull <name>` downloads one without leaving the prompt.
+- **`/effort` sets how much time and effort goes into a task.** `/effort low|medium|high` picks a coherent set of generation budgets — tokens per turn, context window, turn ceiling — for all four surfaces at once (`shared/effort.ts`); `medium` is the default and reproduces the values that were previously hard-coded in four separate files, so it changes nothing until you ask. `/effort 20m` adds a wall-clock cap per task, `/effort off` removes it. `/effort` alone reads both back.
+- **`/btw <note>`** slips a note into the context without triggering a reply — a correction you want the model to have next turn, not a question. **`/image <path>`** attaches a picture to your next message, **`/init`** writes a `SUNFLOWER.md` describing the project, **`/compact`** renews the context now instead of waiting for the budget.
+- **`ctrl+L` folds and unfolds the thinking block**, mid-stream included; folded it reads `[thinking · 14 lines]`.
 - **Type a question at the `❯` prompt** — it takes a screenshot at your cursor and runs the exact same pipeline as voice: the answer streams into the terminal *and* into the companion bubble with speech. Typing works even while whisper is still downloading.
 - Voice sessions render live too: `listening…`, `looking at your screen…`, your transcribed question, a spinner while the model thinks, then the streamed answer with its duration.
 - On a cold start the spinner says `waking the model…` instead of failing — sunflower preloads the model when the app launches and again the moment you start speaking, and allows up to ~3 minutes for the first token of a cold load.
 - **Every 10 000 tokens of context, a fresh chat starts automatically.** The Ollama runner survives from one question to the next (`keep_alive` + prompt cache), and with small local vision models that accumulated state degrades answers over a long session — early questions read the screen perfectly, later ones start hallucinating. Sunflower counts the tokens each answer really consumed (as reported by Ollama) and, past 10k, prints `✦ … starting a fresh chat`, unloads the model — discarding all of its state — and preloads it again in the background while you read the answer.
 - **Native whisper.cpp/Metal logs never reach the terminal.** whisper.cpp re-initialises its state (Metal context included) on every transcription and logs the whole process to stderr — dozens of `whisper_*` / `ggml_*` lines per question. The launcher filters them out into `~/Library/Application Support/sunflower/logs/native.log` (rotated at 5 MB) so the terminal only shows the dialogue; anything else written to stderr (real errors) still comes through.
-- **Ctrl+C** interrupts the current answer, the current Sunflower-Code turn *and* any work run; at an idle prompt it quits the app. Set `SUNFLOWER_DEBUG=1` for full error details and the raw, unfiltered native logs.
+- **Ctrl+C** interrupts the current answer, the current Sunflower-Code turn *and* any work run. It never quits — that's `ctrl+D` or `/quit`, same as the original. Set `SUNFLOWER_DEBUG=1` for full error details and the raw, unfiltered native logs.
+- **Closing the terminal closes sunflower.** It listens for `stdin` closing and for `SIGHUP` — events, not a poll of the parent process — and only when it was actually launched from a TTY.
 - Without a TTY (packaged app, redirected output) all of this degrades to plain `[sunflower]` log lines — nothing else changes.
 
 ### Sunflower-Code — the coding harness
@@ -125,10 +165,12 @@ The terminal isn't only a question box. `/mode code` (or `chat`, `vision`, `plan
 | Level | Reads | Writes and shell |
 | --- | --- | --- |
 | `plan` | free | refused outright |
-| `normal` *(default)* | free | each one waits for a `y` at the prompt |
+| `normal` *(default)* | free | each one waits for `y`, `n` or `a` at the prompt |
 | `yolo` | free | no questions asked |
 
 The mode can restrict further but never widen: `plan` mode is read-only even under `yolo`, and `chat` exposes no tools at all whatever the level.
+
+`a` at an approval prompt means **always allow this exact action** — same tool, same arguments — for the rest of the session. It generalises nothing: approving `bash npm test` once and for all does not approve `bash`, and certainly not `bash rm -rf`. The rule is dropped when you `/clear`, change permission level, or change project folder.
 
 **Two tool dialects, one code path.** Small local models are not equal in front of function calling, so Sunflower-Code asks Ollama (`/api/show`) whether the model advertises `tools`. If it does, the native tool interface is used. If it doesn't, the prompt describes a text protocol instead — one fenced ```tool block holding `{"name": …, "args": {…}}` — and the parser turns it into the same call object. Nothing downstream knows which one served.
 

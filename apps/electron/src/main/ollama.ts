@@ -1,6 +1,15 @@
-// Client Ollama direct (100 % local) : /api/tags pour le statut,
-// /api/chat en stream NDJSON pour les réponses.
+// Le tchat du compagnon (100 % local) : /api/chat en stream NDJSON.
+// Tout ce qui n'est pas le tchat — hôte, /api/tags, /api/ps, /api/show,
+// /api/pull — vit dans lib/ollama-api.cjs, partagé avec les bins.
 import { getConfig } from "./config-store";
+import { budgetFor, type SurfaceBudget } from "../shared/effort";
+import {
+  listModels,
+  loadedModels,
+  normalizeHost,
+  sameModel,
+  type OllamaModelInfo,
+} from "../../lib/ollama-api.cjs";
 
 export class OllamaUserInterrupt extends Error {}
 export class OllamaFailure extends Error {
@@ -10,9 +19,7 @@ export class OllamaFailure extends Error {
 }
 
 export function ollamaHost(): string {
-  let host = process.env["OLLAMA_HOST"] ?? getConfig().ollamaHost;
-  if (!/^https?:\/\//.test(host)) host = `http://${host}`;
-  return host.replace(/\/+$/, "");
+  return normalizeHost(process.env["OLLAMA_HOST"] ?? getConfig().ollamaHost);
 }
 
 export interface OllamaStatus {
@@ -23,25 +30,15 @@ export interface OllamaStatus {
   pulled: boolean;
 }
 
-interface TagModel {
-  name: string;
-  capabilities?: string[];
-}
-
-function sameModel(a: string, b: string): boolean {
-  const norm = (s: string) => (s.includes(":") ? s : `${s}:latest`);
-  return norm(a) === norm(b);
-}
-
 /**
  * Le modèle configuré s'il est présent, sinon le premier modèle local avec
  * la capacité vision — l'app doit marcher avec ce qui tourne déjà chez vous.
  */
-function pickModel(models: TagModel[]): TagModel | undefined {
+function pickModel(models: OllamaModelInfo[]): OllamaModelInfo | undefined {
   const configured = getConfig().ollamaModel;
   return (
     models.find((m) => sameModel(m.name, configured)) ??
-    models.find((m) => (m.capabilities ?? []).includes("vision"))
+    models.find((m) => m.capabilities.includes("vision"))
   );
 }
 
@@ -49,12 +46,7 @@ export async function checkOllama(): Promise<OllamaStatus> {
   const host = ollamaHost();
   const name = getConfig().ollamaModel;
   try {
-    const res = await fetch(`${host}/api/tags`, {
-      signal: AbortSignal.timeout(1500),
-    });
-    if (!res.ok) return { host, name, reachable: false, pulled: false };
-    const data = (await res.json()) as { models?: TagModel[] };
-    const picked = pickModel(data.models ?? []);
+    const picked = pickModel(await listModels(host, 1500));
     return {
       host,
       name: picked?.name ?? name,
@@ -66,38 +58,32 @@ export async function checkOllama(): Promise<OllamaStatus> {
   }
 }
 
+/** Les modèles installés localement — le picker de `/model` s'en sert. */
+export async function availableModels(): Promise<OllamaModelInfo[]> {
+  return listModels(ollamaHost(), 4000);
+}
+
 /** Modèle à utiliser pour une requête (résolu au dernier moment). */
 async function resolveModel(): Promise<string> {
   const status = await checkOllama();
   return status.pulled ? status.name : getConfig().ollamaModel;
 }
 
-const FIRST_TOKEN_WARM_MS = 45_000; // modèle déjà en mémoire
 const FIRST_TOKEN_COLD_MS = 180_000; // chargement à froid (disque → RAM/VRAM)
 const INTER_TOKEN_MS = 30_000; // silence entre tokens
 const KEEP_ALIVE = "10m";
-// Contexte : capture (~600-2500 tokens visuels qwen3-vl) + prompt + 700 tokens
-// de réponse (plafond NUM_PREDICT, atteint seulement par les plans de guide).
-// Le défaut Ollama (4096) tronque silencieusement ; 32768 (variante serveur,
-// multi-tours + outils) gonflerait RAM et temps de chargement pour rien en
-// mono-tour.
-const NUM_CTX = 8192;
-// Réponses courtes (1-3 phrases) ou plan de guide (≤ 8 lignes d'étapes +
-// intro/clôture ≈ 450 tokens) : 700 laisse de la marge sans rien coûter.
-const NUM_PREDICT = 700;
+// Contexte, plafond de génération et attente à chaud viennent du preset
+// d'effort (shared/effort.ts) : « medium » redonne les valeurs historiques
+// (8192 / 700 / 45 s). Le contexte du compagnon ne bouge pas d'un cran à
+// l'autre — un num_ctx plus large coûte RAM et chargement pour rien en
+// mono-tour ; seul le plafond de réponse suit l'effort.
+const budget = (): SurfaceBudget => budgetFor(getConfig().effort, "companion");
 
-/** GET /api/ps — le modèle est-il déjà chargé ? Toute erreur ⇒ froid. */
+/** Le modèle est-il déjà chargé ? Toute erreur ⇒ on suppose froid. */
 async function isModelLoaded(model: string): Promise<boolean> {
   try {
-    const res = await fetch(`${ollamaHost()}/api/ps`, {
-      signal: AbortSignal.timeout(1500),
-    });
-    if (!res.ok) return false;
-    const data = (await res.json()) as {
-      models?: { name?: string; model?: string }[];
-    };
-    return (data.models ?? []).some((m) =>
-      sameModel(m.name ?? m.model ?? "", model),
+    return (await loadedModels(ollamaHost())).some((name) =>
+      sameModel(name, model),
     );
   } catch {
     return false;
@@ -173,7 +159,7 @@ export function warmModel(): void {
           messages: [],
           stream: false,
           keep_alive: KEEP_ALIVE,
-          options: { num_ctx: NUM_CTX },
+          options: { num_ctx: budget().numCtx },
         }),
       });
       if (res.ok) warmedAt = Date.now();
@@ -260,7 +246,7 @@ export interface ChatOptions {
   /** Prompt système alternatif (défaut : compagnon d'écran). Utilisé par la
    *  double vérification du pointage (point-verifier). */
   system?: string;
-  /** Plafond de génération spécifique (défaut : NUM_PREDICT). */
+  /** Plafond de génération spécifique (défaut : celui du preset d'effort). */
   numPredict?: number;
 }
 
@@ -286,7 +272,7 @@ export async function chat(opts: ChatOptions): Promise<string> {
   let full = "";
   try {
     if (!warm) opts.onStatus?.("loading-model");
-    arm(warm ? FIRST_TOKEN_WARM_MS : FIRST_TOKEN_COLD_MS);
+    arm(warm ? budget().firstTokenMs : FIRST_TOKEN_COLD_MS);
     const res = await fetch(`${ollamaHost()}/api/chat`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -298,8 +284,8 @@ export async function chat(opts: ChatOptions): Promise<string> {
         keep_alive: KEEP_ALIVE,
         options: {
           temperature: 0.4,
-          num_predict: opts.numPredict ?? NUM_PREDICT,
-          num_ctx: NUM_CTX,
+          num_predict: opts.numPredict ?? budget().numPredict,
+          num_ctx: budget().numCtx,
         },
         messages: [
           { role: "system", content: opts.system ?? SYSTEM_PROMPT },

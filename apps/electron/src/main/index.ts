@@ -8,6 +8,7 @@ import {
   screen,
 } from "electron";
 import { existsSync, statSync } from "node:fs";
+import { readFile, readdir, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 import { CH, type MicDataPayload, type MicErrorCode } from "../shared/ipc";
@@ -18,8 +19,10 @@ import type {
 } from "../shared/agents";
 import type { ActivitySnapshot } from "../shared/activity";
 import {
+  CODE_COMPACT_AT_TOKENS,
   CODE_MODES,
   CODE_PERMISSIONS,
+  codeMaxTurns,
   type CodeAppEvent,
   type CodeMode,
   type CodePermission,
@@ -56,7 +59,21 @@ import {
   onGlobalMouseDown,
   stopHotkey,
 } from "./hotkey";
-import { chat, checkOllama, onContextReset, warmModel } from "./ollama";
+import {
+  availableModels,
+  chat,
+  checkOllama,
+  ollamaHost,
+  onContextReset,
+  warmModel,
+} from "./ollama";
+import { formatBytes, pullModel, sameModel } from "../../lib/ollama-api.cjs";
+import {
+  EFFORTS,
+  formatDeadline,
+  parseEffort,
+} from "../shared/effort";
+import type { SunflowerConfig } from "../shared/config-schema";
 import {
   permissionStatuses,
   requestPermission,
@@ -103,6 +120,17 @@ import {
  *  ce que veut dire un argument nu qui s'appelle « code ». */
 const OPEN_CODE_FLAG = "--open-code";
 
+/** `sunflower-code` passe le dossier depuis lequel on l'a lancé : le harnais
+ *  démarre dans le projet où l'on se trouve, sans /cd d'ouverture. */
+const WORKDIR_FLAG = "--cd";
+
+function workdirFromArgv(argv: readonly string[]): string | null {
+  const index = argv.indexOf(WORKDIR_FLAG);
+  if (index !== -1 && argv[index + 1] !== undefined) return argv[index + 1] as string;
+  const inline = argv.find((arg) => arg.startsWith(`${WORKDIR_FLAG}=`));
+  return inline ? inline.slice(WORKDIR_FLAG.length + 1) : null;
+}
+
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
   app.quit();
@@ -134,6 +162,8 @@ async function main(): Promise<void> {
     codeWorkdir: codeSession?.info().workdir ?? process.cwd(),
     codePermission: getConfig().codePermission,
     workEnabled: getConfig().sunflowerWorkEnabled,
+    effort: getConfig().effort,
+    effortDeadlineMin: getConfig().effortDeadlineMin,
   });
 
   let island: BrowserWindow | null = null;
@@ -208,6 +238,7 @@ async function main(): Promise<void> {
         turns: 0,
         tokens: 0,
         messages: 0,
+        maxTurns: codeMaxTurns(getConfig().effort),
       },
     onEvent: (ev: CodeAppEvent) => sendCode(CH.codeEvent, ev),
   });
@@ -824,6 +855,10 @@ async function main(): Promise<void> {
       // le priver d'un événement.
       tui.codeEvent(ev);
       codeTranscript.ingest(ev);
+      // La jauge de contexte de la barre d'état : même source que celle de
+      // l'app, donc les deux disent la même chose.
+      const info = codeSession?.info();
+      if (info) tui.setUsage(info.tokens, CODE_COMPACT_AT_TOKENS);
     },
     capture: async () => {
       const shot = await captureScreenAtCursor();
@@ -906,6 +941,10 @@ async function main(): Promise<void> {
     // d'entrée, et l'invite du terminal déjà en mode code — c'est ce qu'on a
     // demandé en tapant la commande. Jamais pendant l'accueil.
     if (process.argv.includes(OPEN_CODE_FLAG)) {
+      const wanted = workdirFromArgv(process.argv);
+      if (wanted && !setCodeWorkdir(path.resolve(wanted))) {
+        tui.warn(`no folder at ${wanted} — staying in ${codeWorkdir}.`);
+      }
       tui.setMode(getConfig().codeMode);
       void openCodeWindow().then(() => codeTranscript.syncInfo());
     }
@@ -916,8 +955,173 @@ async function main(): Promise<void> {
     void buildPanelData().then((data) => tui.status(tuiInfo(data)));
   };
 
+  /**
+   * Les commandes du CLI, et leur aide. La table vit ici et pas dans tui.ts :
+   * c'est `runCommand` qui les met en œuvre, et une aide qui vit ailleurs que
+   * son implémentation est une aide qui ment au premier ajout.
+   */
+  const SLASH_HELP: readonly (readonly [string, string])[] = [
+    ["/help", "this card"],
+    ["/mode <ask|code|chat|vision|plan>", "who answers what you type"],
+    ["/model [name]", "pick from the installed models, or switch directly"],
+    ["/pull <name>", "download a model from ollama"],
+    ["/effort [low|medium|high] [20m]", "how much time and effort per task"],
+    ["/permission <plan|normal|yolo>", "what sunflower-code may do on its own"],
+    ["/cd <folder>", "sunflower-code's project folder"],
+    ["/btw <note>", "slip a note into the context, without a reply"],
+    ["/image <path>", "attach an image to your next message"],
+    ["/init", "write a SUNFLOWER.md describing this project"],
+    ["/compact", "renew the context now, keeping a summary"],
+    ["/clear", "forget the conversation"],
+    ["/code", "open the sunflower-code app"],
+    ["/sessions", "saved sunflower work runs"],
+    ["/status", "the status card again"],
+    ["/work <task>", "hand a computer chore to sunflower work"],
+    ["/agents", "background coding agents of the panel"],
+    ["/quit", "close sunflower"],
+  ];
+
+  /** Rafraîchit ce que la barre d'état du terminal affiche en permanence. */
+  const syncTuiStatus = () => {
+    void buildPanelData().then((data) => tui.setStatus(tuiInfo(data)));
+  };
+
+  /** `/model` sans argument : la liste des modèles installés, en surimpression. */
+  const openModelPicker = async (): Promise<void> => {
+    let models;
+    try {
+      models = await availableModels();
+    } catch {
+      tui.warn("can't reach ollama — run: ollama serve");
+      return;
+    }
+    if (models.length === 0) {
+      tui.warn("no model installed — /pull qwen3-vl:8b downloads the default one.");
+      return;
+    }
+    const active = getConfig().ollamaModel;
+    // Sans terminal interactif (sortie redirigée), la surimpression n'a nulle
+    // part où vivre : on liste, ce qui reste utile dans un log.
+    if (!process.stdout.isTTY) {
+      for (const m of models) {
+        tui.log(`  ${sameModel(m.name, active) ? "●" : " "} ${m.name}`);
+      }
+      return;
+    }
+    const chosen = await tui.pick(
+      `select a model (${models.length} installed)`,
+      models.map((m) => ({
+        value: m.name,
+        label: m.name,
+        meta: [m.parameterSize, m.quantization, formatBytes(m.sizeBytes)]
+          .filter(Boolean)
+          .join(" · "),
+        current: sameModel(m.name, active),
+      })),
+    );
+    if (chosen === null || sameModel(chosen, active)) return;
+    setConfig({ ollamaModel: chosen });
+    warmModel();
+    syncTuiStatus();
+    tui.ok(`model: ${chosen}`);
+  };
+
+  /** `/model <nom>` : bascule validée contre ce qui est réellement installé. */
+  const switchModel = async (wanted: string): Promise<void> => {
+    let installed: string[] = [];
+    try {
+      installed = (await availableModels()).map((m) => m.name);
+    } catch {
+      // Ollama muet : on écrit quand même le choix, il vaudra au démarrage
+      // suivant. Refuser ici empêcherait de préparer sa config hors ligne.
+      setConfig({ ollamaModel: wanted });
+      syncTuiStatus();
+      tui.warn(`model set to ${wanted}, but ollama is unreachable right now.`);
+      return;
+    }
+    if (!installed.some((name) => sameModel(name, wanted))) {
+      tui.warn(`${wanted} isn't installed — /pull ${wanted} downloads it.`);
+      return;
+    }
+    setConfig({ ollamaModel: wanted });
+    warmModel();
+    syncTuiStatus();
+    tui.ok(`model: ${wanted}`);
+  };
+
+  /** `/pull <nom>` : téléchargement avec une barre de progression sur place. */
+  const pullFromCli = async (model: string): Promise<void> => {
+    tui.notice(`pulling ${model} …`);
+    let lastShown = 0;
+    try {
+      await pullModel(ollamaHost(), model, (progress) => {
+        // Une ligne toutes les deux secondes : le terminal garde son fil, et
+        // une barre qui se redessine n'a pas sa place dans un log à colonnes.
+        const now = Date.now();
+        if (now - lastShown < 2000) return;
+        lastShown = now;
+        const pct =
+          progress.total > 0
+            ? ` ${Math.round((progress.completed / progress.total) * 100)}%`
+            : "";
+        tui.notice(`${progress.status || "downloading"}${pct}`);
+      });
+    } catch (err) {
+      tui.warn(
+        `pull failed — ${err instanceof Error ? err.message : "unknown error"}`,
+      );
+      return;
+    }
+    tui.ok(`${model} is ready — /model ${model} makes it active.`);
+  };
+
+  /** `/init` : une fiche de projet que le harnais relira au tour suivant. */
+  const writeProjectCard = async (): Promise<void> => {
+    const dir = codeSession?.info().workdir ?? codeWorkdir;
+    const target = path.join(dir, "SUNFLOWER.md");
+    if (existsSync(target)) {
+      tui.warn(`${target} already exists — nothing written.`);
+      return;
+    }
+    const entries = await readdir(dir).catch(() => [] as string[]);
+    const card = [
+      `# ${path.basename(dir)}`,
+      "",
+      "What sunflower-code should know about this project.",
+      "",
+      "## Layout",
+      "",
+      ...entries
+        .filter((name) => !name.startsWith("."))
+        .slice(0, 30)
+        .map((name) => `- ${name}`),
+      "",
+      "## Conventions",
+      "",
+      "- (describe how this project is meant to be worked on)",
+      "",
+      "## Commands",
+      "",
+      "- (build, test, lint…)",
+      "",
+    ].join("\n");
+    try {
+      await writeFile(target, card, "utf8");
+    } catch (err) {
+      tui.warn(
+        `couldn't write it — ${err instanceof Error ? err.message : "unknown error"}`,
+      );
+      return;
+    }
+    tui.ok(`wrote ${target} — fill it in, sunflower-code reads it.`);
+  };
+
   const runCommand = (name: string, args: string): void => {
     switch (name) {
+      case "help":
+      case "?":
+        tui.help(SLASH_HELP);
+        return;
       case "mode": {
         const next = args.trim().toLowerCase() as CliMode;
         if (!CLI_MODES.includes(next)) {
@@ -925,6 +1129,7 @@ async function main(): Promise<void> {
           return;
         }
         tui.setMode(next);
+        syncTuiStatus();
         if (next !== "ask") {
           codeSession?.setMode(next);
           setConfig({ codeMode: next as CodeMode });
@@ -943,6 +1148,7 @@ async function main(): Promise<void> {
         codeSession?.setPermission(next);
         setConfig({ codePermission: next });
         codeTranscript.syncInfo();
+        syncTuiStatus();
         tui.ok(`sunflower-code permission: ${next}`);
         return;
       }
@@ -965,13 +1171,94 @@ async function main(): Promise<void> {
         return;
       case "model": {
         const wanted = args.trim();
+        void (wanted ? switchModel(wanted) : openModelPicker());
+        return;
+      }
+      case "pull": {
+        const wanted = args.trim();
         if (!wanted) {
-          showStatus();
+          tui.warn("usage: /pull <model> — /model lists what's installed.");
           return;
         }
-        setConfig({ ollamaModel: wanted });
-        warmModel();
-        tui.ok(`model: ${wanted} — run \`sunflower models\` to browse.`);
+        void pullFromCli(wanted);
+        return;
+      }
+      case "effort": {
+        const raw = args.trim();
+        if (!raw) {
+          tui.notice(
+            `effort ${getConfig().effort} · ${formatDeadline(getConfig().effortDeadlineMin)}`,
+          );
+          return;
+        }
+        const parsed = parseEffort(raw);
+        if (!parsed) {
+          tui.warn(
+            `effort: ${EFFORTS.join(", ")}, and a time cap like 20m or 2h (off removes it).`,
+          );
+          return;
+        }
+        const patch: Partial<SunflowerConfig> = {};
+        if (parsed.preset !== undefined) patch.effort = parsed.preset;
+        if (parsed.deadlineMin !== undefined) {
+          patch.effortDeadlineMin = parsed.deadlineMin;
+        }
+        setConfig(patch);
+        syncTuiStatus();
+        tui.ok(
+          `effort ${getConfig().effort} · ${formatDeadline(getConfig().effortDeadlineMin)}`,
+        );
+        return;
+      }
+      case "btw": {
+        const note = args.trim();
+        if (!note) {
+          tui.warn("usage: /btw <note> — it lands in the context, unanswered.");
+          return;
+        }
+        if (!codeSession) {
+          tui.warn("sunflower-code isn't running yet — say something first.");
+          return;
+        }
+        codeSession.note(note);
+        tui.ok("noted — sunflower-code will see it on the next message.");
+        return;
+      }
+      case "image": {
+        const file = args.trim();
+        if (!file) {
+          tui.warn("usage: /image <path>");
+          return;
+        }
+        const abs = path.resolve(file.replace(/^~(?=$|\/)/, homedir()));
+        void readFile(abs)
+          .then((buffer) => {
+            codeSession?.attachImage(buffer.toString("base64"));
+            tui.ok(`${path.basename(abs)} attached to your next message.`);
+          })
+          .catch(() => tui.warn(`no readable image at ${abs}`));
+        return;
+      }
+      case "init":
+        void writeProjectCard();
+        return;
+      case "compact":
+        if (codeSession?.compact() === true) {
+          codeTranscript.note("context renewed.");
+          tui.ok("context renewed — the summary carries the thread.");
+        } else {
+          tui.notice("nothing to compact yet.");
+        }
+        return;
+      case "sessions": {
+        const runs = workRunner?.list() ?? [];
+        if (runs.length === 0) {
+          tui.notice("no saved run — /work <chore> starts one.");
+          return;
+        }
+        for (const run of runs.slice(0, 20)) {
+          tui.log(`  ${run.status.padEnd(10)} ${run.task}`);
+        }
         return;
       }
       case "status":
@@ -1047,7 +1334,8 @@ async function main(): Promise<void> {
         }
         routeToCode(message);
       },
-      approve: (approved) => codeSession?.approve(approved),
+      approve: (approved, always) =>
+        codeSession?.approve(approved, undefined, always),
       command: runCommand,
       interrupt: () => {
         // Ctrl+C au terminal : la session, la session de code ET un éventuel
@@ -1067,6 +1355,8 @@ async function main(): Promise<void> {
     // sur le verrou, mais son argv arrive ici — on ouvre la fenêtre demandée
     // au lieu de basculer le panneau sans rien dire.
     if (argv.includes(OPEN_CODE_FLAG)) {
+      const wanted = workdirFromArgv(argv);
+      if (wanted) setCodeWorkdir(path.resolve(wanted));
       void openCodeWindow().then(() => codeTranscript.syncInfo());
       return;
     }
@@ -1076,6 +1366,30 @@ async function main(): Promise<void> {
   app.on("window-all-closed", () => {
     // App accessoire : elle vit dans la barre de menus.
   });
+
+  // ---- La fleur meurt avec son terminal ---------------------------------
+  // sunflower est lancée DEPUIS un terminal et lui parle : fermer la fenêtre
+  // du terminal doit la fermer aussi, sans quoi il reste une app sans surface
+  // de contrôle, qu'on ne retrouve que dans la barre de menus.
+  //
+  // Deux signaux, tous les deux ÉVÉNEMENTIELS — pas de surveillance
+  // périodique du parent, qui serait un coût permanent à déclarer au budget
+  // always-on (voir CLAUDE.md) pour apprendre presque toujours la même chose.
+  //   - `stdin` se ferme : le terminal a raccroché son bout du tube ;
+  //   - `SIGHUP` : le classique « ton terminal est parti ».
+  //
+  // Armé seulement si on a bien été lancé depuis un terminal : sans TTY,
+  // `stdin` est déjà clos et l'app se suiciderait au démarrage.
+  if (process.stdin.isTTY === true) {
+    const terminalGone = (why: string) => {
+      if (quitting) return;
+      tui.debug(`terminal gone (${why}) — quitting.`);
+      shutdownEverything();
+    };
+    process.stdin.on("end", () => terminalGone("stdin end"));
+    process.stdin.on("close", () => terminalGone("stdin close"));
+    process.on("SIGHUP", () => terminalGone("SIGHUP"));
+  }
   app.on("before-quit", () => {
     if (quitting) return;
     quitting = true;

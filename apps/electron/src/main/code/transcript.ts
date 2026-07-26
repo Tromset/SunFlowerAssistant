@@ -13,7 +13,6 @@
 //
 // Tout est en mémoire. Une conversation de code n'a pas à survivre à la
 // fermeture de l'app, et rien de ce qu'elle contient n'a à toucher le disque.
-import { CODE_MAX_TURNS } from "../../shared/code";
 import type {
   CodeAppEvent,
   CodeAppState,
@@ -154,7 +153,7 @@ export function createCodeTranscript(deps: {
           sendInfo();
           return;
         case "done":
-          flushDraft(deps.info().turns, CODE_MAX_TURNS);
+          flushDraft(deps.info().turns, deps.info().maxTurns);
           pending = null;
           emit({ kind: "done" });
           sendInfo();

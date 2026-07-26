@@ -12,6 +12,7 @@
  *
  *  Module de types partagé : ni electron, ni node. */
 import type { DiffLine } from "./diff";
+import { budgetFor, type Effort } from "./effort";
 
 /** Modes de travail — même jeu que Ollama-Code. */
 export type CodeMode =
@@ -156,8 +157,13 @@ export function toolsFor(
 // Exportées pour que les jauges de l'app aient le MÊME dénominateur que la
 // session : une constante recopiée dans un renderer dérive au premier réglage.
 
-/** Tours de modèle pour une seule requête utilisateur. */
-export const CODE_MAX_TURNS = 24;
+/** Tours de modèle pour une seule requête utilisateur — désormais fonction du
+ *  preset d'effort (shared/effort.ts). Le plafond réellement en vigueur voyage
+ *  dans `CodeSessionInfo.maxTurns` : les jauges lisent ça, jamais une constante,
+ *  sinon le dénominateur ment dès que `/effort` change. */
+export function codeMaxTurns(effort: Effort): number {
+  return budgetFor(effort, "code").maxTurns;
+}
 /** Au-delà, la session se compacte et repart d'une fenêtre neuve. */
 export const CODE_COMPACT_AT_TOKENS = 12_000;
 
@@ -242,6 +248,8 @@ export interface CodeSessionInfo {
   tokens: number;
   /** Messages échangés (système exclu). */
   messages: number;
+  /** Plafond de tours en vigueur — dépend du preset d'effort. */
+  maxTurns: number;
 }
 
 // ---- L'app dédiée ---------------------------------------------------------

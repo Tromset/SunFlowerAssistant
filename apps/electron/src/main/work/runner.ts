@@ -41,6 +41,8 @@ import type {
   WorkStatus,
 } from "../../shared/work";
 import { checkOllama, ollamaHost } from "../ollama";
+import { getConfig } from "../config-store";
+import { budgetFor, type SurfaceBudget } from "../../shared/effort";
 import { captureScreenAtCursor, type Screenshot } from "../screenshot";
 import { idleMs, onRealInput } from "../presence";
 import { mouseHookAvailable } from "../hotkey";
@@ -63,18 +65,19 @@ const WAIT_MAX_MS = 120_000;
  *  Assez court pour que le run ne traîne pas derrière une frappe finie, assez
  *  long pour ne pas se glisser entre deux mots. */
 const QUIET_MS = 2000;
-const TURN_TIMEOUT_MS = 90_000;
+/** Attente d'un tour ; vient du preset d'effort (shared/effort.ts). */
+const turnTimeoutMs = (): number => budget().firstTokenMs;
 /** Pause de stabilisation entre deux gestes (l'UI doit retomber). */
 const SETTLE_MIN_MS = 1500;
 const SETTLE_JITTER_MS = 1000;
 /** Réponses hors format tolérées d'affilée avant d'abandonner. */
 const MAX_BAD_REPLIES = 3;
 // Même contexte que le tchat écran ; une étape JSON tient dans très peu de
-// tokens (num_predict court = un tour raté coûte peu de temps).
-const NUM_CTX = 8192;
-const NUM_PREDICT = 220;
+// tokens (num_predict court = un tour raté coûte peu de temps). Les deux
+// suivent le preset d'effort — « medium » redonne 8192 / 220.
+const budget = (): SurfaceBudget => budgetFor(getConfig().effort, "work");
 /** Tokens consommés dans une fenêtre avant de la renouveler. Volontairement
- *  bien sous NUM_CTX : ce qui dégrade un petit modèle vision, c'est l'état
+ *  bien sous la fenêtre : ce qui dégrade un petit modèle vision, c'est l'état
  *  accumulé du runner, pas seulement le dépassement de fenêtre. */
 const TERMINAL_BUDGET_TOKENS = 5000;
 /** …ou ce nombre d'étapes, si le modèle ne rend pas de compteurs. */
@@ -199,7 +202,7 @@ async function modelTurn(
     throw new Error(`model missing — ollama pull ${status.name}`);
   }
   const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), TURN_TIMEOUT_MS);
+  const timer = setTimeout(() => ctrl.abort(), turnTimeoutMs());
   const onAbort = () => ctrl.abort();
   signal.addEventListener("abort", onAbort, { once: true });
   try {
@@ -215,8 +218,8 @@ async function modelTurn(
         keep_alive: "10m",
         options: {
           temperature: 0.1,
-          num_ctx: NUM_CTX,
-          num_predict: NUM_PREDICT,
+          num_ctx: budget().numCtx,
+          num_predict: budget().numPredict,
         },
         messages: [
           { role: "system", content: SYSTEM_PROMPT },

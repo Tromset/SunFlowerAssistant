@@ -3,6 +3,7 @@
 import type { SunflowerBridge } from "../../shared/ipc";
 import type { PanelData } from "../../shared/state";
 import { DEFAULT_CONFIG } from "../../shared/config-schema";
+import { codeMaxTurns } from "../../shared/code";
 import {
   WORK_ON_USER_INPUT_DEF,
   WORK_SETTINGS_BOUNDS,
@@ -140,6 +141,7 @@ export function ensureBridge(): void {
           turns: 0,
           tokens: 0,
           messages: 0,
+          maxTurns: codeMaxTurns(DEFAULT_CONFIG.effort),
         },
         entries: [],
         draft: "",

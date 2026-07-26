@@ -26,6 +26,10 @@ const bold = paint("1");
 const FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 const CLEAR_LINE = "\r\x1b[2K";
 
+// Client Ollama partagé avec l'app et l'autre bin — une seule implémentation
+// de l'hôte, de /api/tags et du pull (voir lib/ollama-api.cjs).
+const api = require("../lib/ollama-api.cjs");
+
 // ---- Config de l'app (miroir de config-store.ts / config-schema.ts) --
 const DEFAULT_MODEL = "qwen3-vl:8b";
 const DEFAULT_HOST = "http://127.0.0.1:11434";
@@ -99,12 +103,11 @@ function activeModel() {
 /** Hôte Ollama : OLLAMA_HOST > config > défaut ; préfixe http, sans slash final. */
 function ollamaHost() {
   const cfg = readConfig();
-  let host =
+  return api.normalizeHost(
     process.env["OLLAMA_HOST"] ||
-    (typeof cfg.ollamaHost === "string" && cfg.ollamaHost) ||
-    DEFAULT_HOST;
-  if (!/^https?:\/\//.test(host)) host = `http://${host}`;
-  return host.replace(/\/+$/, "");
+      (typeof cfg.ollamaHost === "string" && cfg.ollamaHost) ||
+      DEFAULT_HOST,
+  );
 }
 
 // ---- Catalogue recommandé --------------------------------------------
@@ -128,16 +131,12 @@ const CATALOG = [
 ];
 
 const VISION_RE = /(vl|vision|llava|moondream|minicpm-v|bakllava|mllama)/i;
+const sameModel = api.sameModel;
+
 function isVisionName(name) {
   const n = String(name).toLowerCase();
   return CATALOG.some((c) => c.vision && sameModel(c.name, name)) ||
     VISION_RE.test(n);
-}
-
-/** « qwen3-vl:8b » == « qwen3-vl:8b:latest »? Normalise le tag manquant. */
-function sameModel(a, b) {
-  const norm = (s) => (String(s).includes(":") ? String(s) : `${s}:latest`);
-  return norm(a) === norm(b);
 }
 
 // ---- Utilitaires réseau ----------------------------------------------
@@ -146,17 +145,16 @@ class Unreachable extends Error {}
 
 async function apiTags() {
   const host = ollamaHost();
-  let res;
   try {
-    res = await fetch(`${host}/api/tags`, {
-      signal: AbortSignal.timeout(3000),
-    });
-  } catch {
+    return await api.listModels(host, 3000);
+  } catch (err) {
+    // Un hôte qui répond mal et un hôte absent ne se soignent pas pareil :
+    // le premier mérite son message, le second le mode d'emploi complet.
+    if (err && /HTTP \d+/.test(String(err.message))) {
+      throw new Error(`ollama responded badly at ${host}`);
+    }
     throw new Unreachable(host);
   }
-  if (!res.ok) throw new Error(`ollama responded ${res.status} at ${host}`);
-  const data = await res.json();
-  return Array.isArray(data.models) ? data.models : [];
 }
 
 function fmtBytes(n) {
@@ -236,7 +234,7 @@ async function runList() {
   } else {
     const rows = installed.map((m) => [
       sameModel(m.name, active) ? `* ${m.name}` : `  ${m.name}`,
-      fmtBytes(m.size) || "-",
+      fmtBytes(m.sizeBytes) || "-",
       (m.details && m.details.parameter_size) || "-",
       isVisionName(m.name) ? "vision" : "text",
     ]);
@@ -316,36 +314,11 @@ async function pullModel(model, signal) {
   const host = ollamaHost();
   process.stdout.write(`\n${yellow("↓")} pulling ${bold(model)} …\n`);
 
-  let res;
-  try {
-    res = await fetch(`${host}/api/pull`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ model, stream: true }),
-      signal,
-    });
-  } catch (err) {
-    if (err && err.name === "AbortError") {
-      process.stdout.write(dim("  cancelled.\n"));
-      return { ok: false, unreachable: false };
-    }
-    ollamaDownHint(host);
-    return { ok: false, unreachable: true };
-  }
-  if (!res.ok || !res.body) {
-    process.stdout.write(`${red("✗")} pull failed: ollama responded ${res.status}\n`);
-    return { ok: false, unreachable: false };
-  }
-
-  const reader = res.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
   let status = "";
   let total = 0;
   let completed = 0;
   let spin = 0;
   let last = 0;
-  let failed = null;
 
   const draw = (final) => {
     const frame = FRAMES[spin++ % FRAMES.length] ?? "⠋";
@@ -371,62 +344,36 @@ async function pullModel(model, signal) {
   };
 
   try {
-    for (;;) {
-      let chunk;
-      try {
-        chunk = await reader.read();
-      } catch (err) {
-        if (signal && signal.aborted) break;
-        failed = err;
-        break;
-      }
-      if (chunk.done) break;
-      buffer += decoder.decode(chunk.value, { stream: true });
-      const lines = buffer.split("\n");
-      buffer = lines.pop() ?? "";
-      for (const l of lines) {
-        if (!l.trim()) continue;
-        let p;
-        try {
-          p = JSON.parse(l);
-        } catch {
-          continue;
-        }
-        if (p.error) {
-          failed = new Error(p.error);
-          break;
-        }
-        if (typeof p.status === "string") status = p.status;
-        if (typeof p.total === "number") total = p.total;
-        if (typeof p.completed === "number") completed = p.completed;
-        else if (!p.total) {
-          total = 0;
-          completed = 0;
-        }
+    await api.pullModel(
+      host,
+      model,
+      (progress) => {
+        status = progress.status || status;
+        total = progress.total;
+        completed = progress.completed;
         const now = Date.now();
         if (now - last > 80) {
           draw(false);
           last = now;
         }
-      }
-      if (failed) break;
+      },
+      signal,
+    );
+  } catch (err) {
+    if (signal && signal.aborted) {
+      process.stdout.write(`${CLEAR_LINE}${dim("  cancelled.")}\n`);
+      return { ok: false, unreachable: false };
     }
-  } finally {
-    try {
-      await reader.cancel();
-    } catch {
-      /* ignore */
+    // Rien n'est parti sur le réseau : Ollama n'est pas là. Une erreur en
+    // cours de flux, elle, a un message d'Ollama qui mérite d'être montré.
+    if (err && (err.name === "TypeError" || /fetch failed/i.test(String(err.message)))) {
+      ollamaDownHint(host);
+      return { ok: false, unreachable: true };
     }
+    process.stdout.write(`${CLEAR_LINE}${red("✗")} ${err.message}\n`);
+    return { ok: false, unreachable: false };
   }
 
-  if (signal && signal.aborted) {
-    process.stdout.write(`${CLEAR_LINE}${dim("  cancelled.")}\n`);
-    return { ok: false, unreachable: false };
-  }
-  if (failed) {
-    process.stdout.write(`${CLEAR_LINE}${red("✗")} ${failed.message}\n`);
-    return { ok: false, unreachable: false };
-  }
   draw(true);
   process.stdout.write(`${green("✓")} ${bold(model)} is ready\n`);
   return { ok: true, unreachable: false };
@@ -523,7 +470,7 @@ async function runInteractive() {
         rows.push({
           type: "model",
           name: m.name,
-          size: fmtBytes(m.size),
+          size: fmtBytes(m.sizeBytes),
           params: (m.details && m.details.parameter_size) || "",
           vision: isVisionName(m.name),
           installed: true,
