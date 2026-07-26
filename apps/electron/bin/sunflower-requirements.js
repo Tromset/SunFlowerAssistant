@@ -13,6 +13,10 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 
+// Client Ollama partagé (voir lib/ollama-api.cjs) : une seule implémentation
+// de l'hôte et de /api/tags pour l'app et les deux bins.
+const api = require("../lib/ollama-api.cjs");
+
 // ---- Couleurs (calquées sur tui.ts) ----------------------------------
 const fancy =
   process.stdout.isTTY === true && process.env["NO_COLOR"] === undefined;
@@ -74,12 +78,11 @@ function whisperModelFile() {
 /** Hôte Ollama : OLLAMA_HOST > config > défaut ; préfixe http, sans slash final. */
 function ollamaHost() {
   const cfg = readConfig();
-  let host =
+  return api.normalizeHost(
     process.env["OLLAMA_HOST"] ||
-    (typeof cfg.ollamaHost === "string" && cfg.ollamaHost) ||
-    DEFAULT_HOST;
-  if (!/^https?:\/\//.test(host)) host = `http://${host}`;
-  return host.replace(/\/+$/, "");
+      (typeof cfg.ollamaHost === "string" && cfg.ollamaHost) ||
+      DEFAULT_HOST,
+  );
 }
 
 // ---- Racines du projet ------------------------------------------------
@@ -243,15 +246,7 @@ function checkBuild() {
 /** Ollama joignable ? Retourne { reachable, models } sans jamais jeter. */
 async function tags() {
   try {
-    const res = await fetch(`${ollamaHost()}/api/tags`, {
-      signal: AbortSignal.timeout(3000),
-    });
-    if (!res.ok) return { reachable: false, models: [] };
-    const data = await res.json();
-    return {
-      reachable: true,
-      models: Array.isArray(data.models) ? data.models : [],
-    };
+    return { reachable: true, models: await api.listModels(ollamaHost(), 3000) };
   } catch {
     return { reachable: false, models: [] };
   }
@@ -271,10 +266,7 @@ function checkOllamaReachable(state) {
 }
 
 /** « qwen3-vl:8b » == « qwen3-vl:8b:latest » ? Normalise le tag manquant. */
-function sameModel(a, b) {
-  const norm = (s) => (String(s).includes(":") ? String(s) : `${s}:latest`);
-  return norm(a) === norm(b);
-}
+const sameModel = api.sameModel;
 
 // Même heuristique de secours que sunflower-models.js pour les vieux Ollama
 // dont /api/tags ne remonte pas encore `capabilities`.

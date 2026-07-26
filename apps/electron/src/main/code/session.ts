@@ -19,6 +19,7 @@
 import { checkOllama, createThinkStripper, ollamaHost } from "../ollama";
 import { getConfig } from "../config-store";
 import { budgetFor, type SurfaceBudget } from "../../shared/effort";
+import { showModel } from "../../../lib/ollama-api.cjs";
 import { TOOLS, ToolError, ollamaToolSpecs, toolProtocolHelp } from "./tools";
 import { diffLines, diffTally } from "../../shared/diff";
 import {
@@ -184,18 +185,8 @@ async function supportsNativeTools(model: string): Promise<boolean> {
   if (cached !== undefined) return cached;
   let ok = false;
   try {
-    const res = await fetch(`${ollamaHost()}/api/show`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ model }),
-      signal: AbortSignal.timeout(4000),
-    });
-    if (res.ok) {
-      const data = (await res.json()) as { capabilities?: unknown };
-      ok =
-        Array.isArray(data.capabilities) &&
-        data.capabilities.includes("tools");
-    }
+    const shown = await showModel(ollamaHost(), model, 4000);
+    ok = shown.capabilities.includes("tools");
   } catch {
     ok = false; // sans réponse claire, le protocole texte marche partout
   }
