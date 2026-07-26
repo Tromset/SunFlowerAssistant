@@ -6,11 +6,13 @@
   "main": "dist/main/index.cjs",
   "bin": {
     "sunflower": "bin/sunflower.js",
+    "sunflower-code": "bin/sunflower-code.js",
     "sunflower-models": "bin/sunflower-models.js",
     "sunflower-requirements": "bin/sunflower-requirements.js"
   },
   "scripts": {
     "start": "node scripts/build.mjs && node bin/sunflower.js",
+    "make-app": "node scripts/make-app.mjs",
     "dev": "node scripts/build.mjs --watch",
     "build": "node scripts/build.mjs",
     "check-types": "tsc --noEmit && node scripts/check-loops.mjs",

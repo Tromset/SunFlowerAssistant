@@ -120,6 +120,17 @@ import {
  *  ce que veut dire un argument nu qui s'appelle « code ». */
 const OPEN_CODE_FLAG = "--open-code";
 
+/** `sunflower-code` passe le dossier depuis lequel on l'a lancé : le harnais
+ *  démarre dans le projet où l'on se trouve, sans /cd d'ouverture. */
+const WORKDIR_FLAG = "--cd";
+
+function workdirFromArgv(argv: readonly string[]): string | null {
+  const index = argv.indexOf(WORKDIR_FLAG);
+  if (index !== -1 && argv[index + 1] !== undefined) return argv[index + 1] as string;
+  const inline = argv.find((arg) => arg.startsWith(`${WORKDIR_FLAG}=`));
+  return inline ? inline.slice(WORKDIR_FLAG.length + 1) : null;
+}
+
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
   app.quit();
@@ -930,6 +941,10 @@ async function main(): Promise<void> {
     // d'entrée, et l'invite du terminal déjà en mode code — c'est ce qu'on a
     // demandé en tapant la commande. Jamais pendant l'accueil.
     if (process.argv.includes(OPEN_CODE_FLAG)) {
+      const wanted = workdirFromArgv(process.argv);
+      if (wanted && !setCodeWorkdir(path.resolve(wanted))) {
+        tui.warn(`no folder at ${wanted} — staying in ${codeWorkdir}.`);
+      }
       tui.setMode(getConfig().codeMode);
       void openCodeWindow().then(() => codeTranscript.syncInfo());
     }
@@ -1340,6 +1355,8 @@ async function main(): Promise<void> {
     // sur le verrou, mais son argv arrive ici — on ouvre la fenêtre demandée
     // au lieu de basculer le panneau sans rien dire.
     if (argv.includes(OPEN_CODE_FLAG)) {
+      const wanted = workdirFromArgv(argv);
+      if (wanted) setCodeWorkdir(path.resolve(wanted));
       void openCodeWindow().then(() => codeTranscript.syncInfo());
       return;
     }
@@ -1349,6 +1366,30 @@ async function main(): Promise<void> {
   app.on("window-all-closed", () => {
     // App accessoire : elle vit dans la barre de menus.
   });
+
+  // ---- La fleur meurt avec son terminal ---------------------------------
+  // sunflower est lancée DEPUIS un terminal et lui parle : fermer la fenêtre
+  // du terminal doit la fermer aussi, sans quoi il reste une app sans surface
+  // de contrôle, qu'on ne retrouve que dans la barre de menus.
+  //
+  // Deux signaux, tous les deux ÉVÉNEMENTIELS — pas de surveillance
+  // périodique du parent, qui serait un coût permanent à déclarer au budget
+  // always-on (voir CLAUDE.md) pour apprendre presque toujours la même chose.
+  //   - `stdin` se ferme : le terminal a raccroché son bout du tube ;
+  //   - `SIGHUP` : le classique « ton terminal est parti ».
+  //
+  // Armé seulement si on a bien été lancé depuis un terminal : sans TTY,
+  // `stdin` est déjà clos et l'app se suiciderait au démarrage.
+  if (process.stdin.isTTY === true) {
+    const terminalGone = (why: string) => {
+      if (quitting) return;
+      tui.debug(`terminal gone (${why}) — quitting.`);
+      shutdownEverything();
+    };
+    process.stdin.on("end", () => terminalGone("stdin end"));
+    process.stdin.on("close", () => terminalGone("stdin close"));
+    process.on("SIGHUP", () => terminalGone("SIGHUP"));
+  }
   app.on("before-quit", () => {
     if (quitting) return;
     quitting = true;
