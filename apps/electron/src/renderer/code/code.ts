@@ -93,6 +93,7 @@ let info: CodeSessionInfo = {
   tokens: 0,
   messages: 0,
   maxTurns: codeMaxTurns(DEFAULT_CONFIG.effort),
+  terminal: 1,
 };
 let renewals = 0;
 let pending: CodeToolCall | null = null;
@@ -217,7 +218,12 @@ function renderControls(): void {
   meterTokensValue.textContent = `${shortTokens(info.tokens)}/${shortTokens(
     CODE_COMPACT_AT_TOKENS,
   )}`;
-  renewalsEl.textContent = `context renewed ${renewals}×`;
+  // Comme l'app Work, qui montre ses coutures (`terminal 2 · 4 800 tokens`)
+  // au lieu de les cacher : on est dans la fenêtre N, et la tâche l'a suivie.
+  renewalsEl.textContent =
+    renewals > 0
+      ? `terminal ${info.terminal} — context renewed ${renewals}×`
+      : `terminal ${info.terminal}`;
 }
 
 // ---- En-tête + composeur --------------------------------------------------
@@ -334,7 +340,7 @@ function entryNode(entry: CodeEntry): HTMLElement {
     case "compacted": {
       const rule = document.createElement("div");
       rule.className = "rule";
-      rule.textContent = `✦ ${shortTokens(entry.tokens)} tokens — context renewed`;
+      rule.textContent = `✦ ${shortTokens(entry.tokens)} tokens — terminal ${entry.terminal}, task kept`;
       return rule;
     }
     case "error": {

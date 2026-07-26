@@ -89,7 +89,7 @@ screen with an on-screen bracket frame.
 | **Screen pointing** | The model returns `[POINT:x1,y1,x2,y2]`; an orange bracket frame sizes itself to that element. | `main/guide-parser.ts`, `main/windows/pointer.ts` |
 | **Guide mode** | Multi-step how-to plans (`[STEP:…]`) executed deterministically, no model calls between steps. | `main/guide-runner.ts` |
 | **Terminal UI** | The launching terminal becomes a first-class interface: pixel banner, mode badge, slash commands. | `main/tui.ts`, `main/tui-pixel.ts`, `main/tui-ansi.ts` |
-| **Sunflower-Code** | A local coding harness: 4 modes, 7 tools, 3 permission levels, self-compacting context. | `main/code/`, `shared/code.ts` |
+| **Sunflower-Code** | A local coding harness: 4 modes, 7 tools, 3 permission levels, and a context that renews itself without losing the task. | `main/code/`, `shared/code.ts` |
 | **Sunflower Work** | An errand runner that drives mouse and keyboard while you're away. Opt-in. | `main/work/` |
 | **Background coding agents** | Propose-only agents reviewed file by file from the menu-bar panel. | `main/agents/runner.ts` |
 | **Moods** | The flower gives itself an accessory matching the frontmost app. Event-driven, local. | `main/activity.ts`, `shared/activity.ts` |
@@ -604,7 +604,7 @@ flowchart TD
     CAP -- no --> TURN
     IMG --> TURN["turn 1..24"]
     TURN --> BUDGET{"tokens ≥ 12 000?"}
-    BUDGET -- yes --> COMPACT["compact(): deterministic local summary<br/>— first request, last 12 tool lines,<br/>last answer — zero extra model calls"]
+    BUDGET -- yes --> COMPACT["renewTerminal(): fresh window<br/>— cumulated handoff, last 4 exchanges verbatim,<br/>then the task again, word for word<br/>— zero extra model calls"]
     COMPACT --> CALL
     BUDGET -- no --> CALL["modelTurn(): streamed /api/chat"]
     CALL --> DIALECT{"model advertises 'tools'<br/>via /api/show?"}
@@ -669,11 +669,34 @@ even under `yolo`, and `chat` exposes no tools at all whatever the level.
 | Constant | Value |
 | --- | --- |
 | `CODE_MAX_TURNS` | 24 turns per user request |
-| `CODE_COMPACT_AT_TOKENS` | 12 000 → compaction |
+| `CODE_COMPACT_AT_TOKENS` | 12 000 → a fresh terminal |
 | `MAX_CALLS_PER_TURN` | 4 (extras are refused **loudly**, never silently truncated) |
 | `NUM_CTX` / `NUM_PREDICT` | 16 384 / 2048 |
 | `FIRST_TOKEN_MS` / `INTER_CHUNK_MS` | 300 s / 90 s |
 | `MAX_TOOL_RESULT` / `MAX_TOOL_DISPLAY` | 20 000 / 1200 chars |
+| `MAX_TASK_CHARS` / `MAX_HANDOFF_CHARS` | 4 000 / 2 000 chars across a seam |
+| `HANDOFF_TAIL_MESSAGES` / `MAX_TAIL_CHARS` | 4 exchanges verbatim, 800 chars each |
+
+**Changing terminal keeps the task.** Like Work, the harness calls a renewed
+context window a *terminal*, and `renewTerminal()` (`main/code/session.ts`)
+builds the new one out of three pieces, in this order:
+
+1. the **handoff** — the tools run and the last answer *of the window being
+   closed*, prefixed with the previous handoff (`(earlier) …`), so terminal 4
+   still knows what terminal 1 did, without repeating it;
+2. the **last four exchanges verbatim** (truncated, images dropped) — a summary
+   says what was done, this carries the exact paths and symbol names;
+3. **the task prompt itself, word for word and last** — the user message
+   object, so a `vision` screenshot crosses with it.
+
+That third piece is the whole point: the old `compact()` replaced the message
+list with a summary quoting `visible.find(role === "user")`, i.e. the *first*
+request of the session — so a second task, renewed mid-flight, lost its own
+prompt and inherited someone else's. Renewals cost **zero extra model calls**;
+they stay instant and deterministic. `CodeSessionInfo.terminal` carries the
+1-based number, and both surfaces show the seam (`fresh terminal 2, the task
+carries over` in the CLI, `✦ 12.0k tokens — terminal 2, task kept` in the app)
+instead of hiding it.
 
 **Approvals** are single-in-flight but **two surfaces can answer**. The waiter
 carries the `callId`: the terminal answers without one (it can only reply to
@@ -684,10 +707,10 @@ an already-settled approval does nothing instead of deciding the next one.
 
 - **left — what it may do**: mode and permission pills, the project folder, the
   live gate for all seven tools, plus turn/token meters against the real
-  ceilings and the compaction count.
+  ceilings and the terminal you are in.
 - **middle — what it is saying**: streaming answer, inline tool calls
   (`▸ read_file src/x.ts` → `✓ 42 lines · 12 ms`), raw command output, a rule
-  where the context renewed itself. A pending approval raises a banner **pinned
+  where one terminal handed over to the next. A pending approval raises a banner **pinned
   above the composer**, showing an `edit_file` diff *before* you allow it.
 - **right — what it changed**: every file written this session, newest first,
   with a real before/after diff. **Only the diff crosses IPC — never file

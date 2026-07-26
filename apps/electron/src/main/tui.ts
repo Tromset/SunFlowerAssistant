@@ -831,7 +831,7 @@ export function createTui(streams?: {
         usedTokens = 0;
         logLine(
           "sys",
-          `${(ev.tokens / 1000).toFixed(1)}k tokens — sunflower-code renewed its context`,
+          `${(ev.tokens / 1000).toFixed(1)}k tokens — fresh terminal ${ev.terminal}, the task carries over`,
         );
         return;
       case "done":

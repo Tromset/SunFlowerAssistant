@@ -230,8 +230,9 @@ export type CodeEvent =
   /** Un outil attend l'accord : le terminal répond avec approve(ok), l'app
    *  avec approve(ok, call.id) — deux surfaces, un seul accord en vol. */
   | { kind: "approval"; call: CodeToolCall }
-  /** Le contexte a été renouvelé (compactage) — combien de tokens. */
-  | { kind: "compacted"; tokens: number }
+  /** Le contexte a été renouvelé : combien de tokens la fenêtre fermée a
+   *  coûté, et le numéro de celle qui vient de s'ouvrir. */
+  | { kind: "compacted"; tokens: number; terminal: number }
   /** Fin de la requête utilisateur (le prompt peut revenir). */
   | { kind: "done"; text: string }
   | { kind: "error"; message: string };
@@ -250,6 +251,10 @@ export interface CodeSessionInfo {
   messages: number;
   /** Plafond de tours en vigueur — dépend du preset d'effort. */
   maxTurns: number;
+  /** Fenêtre de contexte courante, 1-based — le « terminal » de Sunflower
+   *  Work, même mot pour la même chose. Un renouvellement ouvre la suivante,
+   *  et la tâche traverse la couture. */
+  terminal: number;
 }
 
 // ---- L'app dédiée ---------------------------------------------------------
@@ -273,7 +278,7 @@ export type CodeEntry =
   | { kind: "tool"; at: number; call: CodeToolCall }
   /** Sortie brute d'une commande, rattachée à l'appel qui l'a produite. */
   | { kind: "output"; at: number; callId: number; text: string }
-  | { kind: "compacted"; at: number; tokens: number }
+  | { kind: "compacted"; at: number; tokens: number; terminal: number }
   | { kind: "error"; at: number; message: string }
   /** Marque posée par nous, pas par le modèle : dossier changé, conversation
    *  vidée. Le transcript dit POURQUOI il s'est vidé. */
