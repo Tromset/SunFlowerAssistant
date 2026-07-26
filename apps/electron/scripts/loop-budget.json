@@ -123,16 +123,6 @@
       "why": "le seul geste dont l'effet dépasse le pixel visé : ouvrir l'app ou la page dont la corvée a besoin, au lieu d'espérer qu'elle soit déjà à l'écran"
     },
     {
-      "file": "src/main/agents/runner.ts",
-      "symbol": "runCommand",
-      "kind": "subprocess",
-      "cadenceMs": null,
-      "defaultOn": false,
-      "probesEnvironment": false,
-      "stops": "un tir par commande explicitement approuvée par l'utilisateur",
-      "why": "exécution d'une proposition d'agent de fond"
-    },
-    {
       "file": "src/main/code/tools.ts",
       "symbol": "run",
       "kind": "subprocess",

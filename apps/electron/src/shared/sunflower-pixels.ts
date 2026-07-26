@@ -451,7 +451,7 @@ export const MOOD_DOOMSCROLL: PixelArt = {
 
 /** Humeur → scène. « none » n'a pas de scène : le tournesol reste au naturel
     (POSES.idle). « coding » réutilise la vignette du portable, déjà dessinée
-    pour les agents — même geste, même dessin. */
+    pour la pose « coding » — même geste, même dessin. */
 export const MOOD_ART: Record<ActivityContext, PixelArt | null> = {
   none: null,
   music: MOOD_MUSIC,

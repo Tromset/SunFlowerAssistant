@@ -25,7 +25,7 @@
 - [Guide mode](#guide-mode)
 - [Sunflower-Code — the coding harness](#sunflower-code--the-coding-harness)
 - [Sunflower Work — the errand runner](#sunflower-work--the-errand-runner)
-- [Background coding agents](#background-coding-agents)
+- [The orb](#the-orb)
 - [Moods — contextual activity detection](#moods--contextual-activity-detection)
 - [Surfaces and windows](#surfaces-and-windows)
 - [The terminal interface](#the-terminal-interface)
@@ -91,7 +91,7 @@ screen with an on-screen bracket frame.
 | **Terminal UI** | The launching terminal becomes a first-class interface: pixel banner, mode badge, slash commands. | `main/tui.ts`, `main/tui-pixel.ts`, `main/tui-ansi.ts` |
 | **Sunflower-Code** | A local coding harness: 4 modes, 7 tools, 3 permission levels, and a context that renews itself without losing the task. | `main/code/`, `shared/code.ts` |
 | **Sunflower Work** | An errand runner that drives mouse and keyboard while you're away. Opt-in. | `main/work/` |
-| **Background coding agents** | Propose-only agents reviewed file by file from the menu-bar panel. | `main/agents/runner.ts` |
+| **The orb** | Right-edge badge showing the busy Code session or Work run. | `main/windows/orb.ts` |
 | **Moods** | The flower gives itself an accessory matching the frontmost app. Event-driven, local. | `main/activity.ts`, `shared/activity.ts` |
 | **Dock mode** | Pin the companion to a corner instead of chasing the cursor. | `main/windows/companion.ts` |
 | **Watchdog** | Per-process CPU/RSS samples appended to a rotated JSONL log. | `main/watchdog.ts` |
@@ -197,11 +197,11 @@ graph TD
         island["island<br/>560×110, under the notch<br/>status + mic capture"]
         companion["companion<br/>480×220 → 110×110 docked<br/>flower + speech bubble"]
         pointer["pointer<br/>adaptive bracket frame"]
-        orb["agent-orb<br/>docked to the right edge"]
+        orb["orb<br/>docked to the right edge"]
     end
 
     subgraph windows["Regular windows"]
-        panel["menu-bar panel<br/>home · agents · work · code"]
+        panel["menu-bar panel<br/>home · work · code"]
         work["Sunflower Work app<br/>3 columns"]
         code["Sunflower-Code app<br/>3 columns"]
         onboard["onboarding<br/>3 steps, first launch only"]
@@ -227,7 +227,7 @@ graph TD
 | `island` | overlay, 560×110, centred under the notch | hidden at `idle`, shown on any other state, 2 s grace before hiding |
 | `companion` | overlay, 480×220 (110×110 docked) | always visible after onboarding; click-through except over the flower |
 | `pointer` | overlay, resizable | 4 s per frame (`POINTER_MS`), or sticky during a guide |
-| `agent-orb` | overlay, focusable | only while an agent run is queued or running |
+| `orb` | overlay, focusable | only while a code session or work run is busy |
 | `panel` | popover anchored to the tray | toggled by the tray click; self-sizes to its card height |
 | `work` / `code` | regular windows | opened on demand; closing hides, state survives |
 | `onboarding` | regular window | first launch only (`onboarded: false`) |
@@ -251,9 +251,9 @@ graph LR
         r["island · companion · panel<br/>pointer · orb · work · code"]
     end
 
-    m -- "webContents.send: state, answerToken,<br/>panelData, agentEvent, workEvent,<br/>codeEvent, activity, guideStep…" --> b
+    m -- "webContents.send: state, answerToken,<br/>panelData, orbChanged, workEvent,<br/>codeEvent, activity, guideStep…" --> b
     b -- "on(…) subscriptions" --> r
-    r -- "invoke: getStatus, setConfig,<br/>agentStart, workStart, codeSend,<br/>codeApprove, quit…" --> b
+    r -- "invoke: getStatus, setConfig,<br/>orbOpen, workStart, codeSend,<br/>codeApprove, quit…" --> b
     b -- "ipcRenderer.invoke / send" --> m
 ```
 
@@ -264,7 +264,7 @@ Channel families:
 | `sf:state`, `sf:answer-*`, `sf:point-show`, `sf:guide-step`, `sf:tts-*` | main → renderer | the live session |
 | `sf:mic-*` | both | mic start/stop commands, PCM data back |
 | `sf:panel-data`, `sf:activity` | main → renderer | status card, mood snapshot |
-| `sf:agents:*`, `sf:agent-orb:*` | both | background agents and their orb |
+| `sf:orb:*` | both | the right-edge orb: status, hover, drag, click |
 | `sf:work:*` | both | Sunflower Work sessions |
 | `sf:code:*` | both | Sunflower-Code (single shared session — **no session id in any method**) |
 | `sf:permissions:*`, `sf:config:*`, `sf:whisper:*`, `sf:app:quit` | renderer → main | setup and lifecycle |
@@ -358,7 +358,7 @@ stateDiagram-v2
 | `thinking` | `thinking` | `thinking` |
 | `responding` | `answering` | `answering` / `pointing` |
 | `guiding` | `guiding` | `pointing` |
-| — | `acting` | `coding` / `working` (agents, work runs) |
+| — | `acting` | `working` (work runs) |
 | — | `error` | `idle` |
 
 ### Screen capture
@@ -904,60 +904,43 @@ run never ends up commenting on its own interface.
 
 ---
 
-## Background coding agents
+## The orb
 
-The panel's **agents** tab is a queue of background tasks, each scoped to one
-project folder, running against your local text model. **Propose-only by
-default.**
+A small pixel sunflower docked to the right edge of the screen, visible only
+while **Sunflower-Code** or **Sunflower Work** is busy. It is the only sign of
+life when neither app has a window open.
 
-```mermaid
-flowchart TD
-    START["agentStart(task, workdir, allowCommands)"] --> LOOP["turn 1..8"]
-    LOOP --> ASK["Ollama, streamed<br/>num_ctx 16384, num_predict 2048"]
-    ASK --> KIND{"reply shape"}
-    KIND -- "READ: path (≤4)" --> READ["serve file contents<br/>16 000 bytes each"]
-    READ --> LOOP
-    KIND -- "RUN: command (opt-in only)" --> BL{"shell-guard blacklist"}
-    BL -- blocked --> REF["status refused —<br/>visible in the transcript, never silent"]
-    REF --> LOOP
-    BL -- allowed --> WAIT["status awaiting-command<br/>waits for your run/deny click"]
-    WAIT -- denied --> LOOP
-    WAIT -- approved --> RUN["spawn, cwd locked to workdir,<br/>120 s timeout, stdout/stderr streamed live"]
-    RUN --> FEED["exit code + output fed back"]
-    FEED --> LOOP
-    KIND -- "fenced 'file:path' blocks, max 10" --> PROP["proposal: {path, before, after}"]
-    PROP --> REVIEW["status awaiting-review"]
-    REVIEW --> DECIDE["accept / deny — per file, from the panel"]
-    DECIDE --> DISK["accepted files written to disk"]
+The main process translates both runners into one neutral payload
+(`shared/orb.ts`) so the renderer never has to know either feature's state
+model:
+
+```ts
+interface OrbRun {
+  id: string;
+  source: "code" | "work";
+  title: string;   // project folder for Code, task for Work
+  state: string;   // already-written text: "turn 3/8 · thinking…", "step 12"
+  active: boolean; // the disc is lit
+  working: boolean; // a model call or tool is actually in flight
+}
 ```
 
-**Nothing is written to disk** until you explicitly accept a file: `decide()`
-is the only path from an agent to your filesystem.
+`refreshOrb()` in `main/index.ts` rebuilds that list from
+`codeSession.info()` and the active Work sessions, then pushes it over
+`sf:orb:changed` and shows or hides the window. It runs from events the two
+runners already emit — the code session's `onEvent` and the work runner's
+`onSessionsChanged`/`onFinished` — so **the orb has no timer of its own**.
+Token bursts don't repaint anything: the derived payload is compared against
+the last one sent and identical states are dropped.
 
-**Command execution is opt-in, per run** (a checkbox on the launch form). Even
-when checked, three guardrails stack: the non-bypassable blacklist
-(`main/shell-guard.ts`), the mandatory per-command click, and a confined spawn.
+`working` is deliberately narrower than `active`: an approval prompt or a
+paused errand leaves the disc lit but stops the ring animation, so movement
+always means the machine is doing something rather than waiting on you.
 
-`shell-guard.ts` is shared with Sunflower-Code's `bash` tool. It refuses
-outright (never silently): `sudo`/`doas`, recursive+force `rm`, `rm` at `/` or
-`~`, force pushes, `git reset --hard`, `git clean -f/-x`, `git checkout .`,
-piping a download into a shell, writing to a device, `dd of=`, disk
-formatting/partitioning, power control, `kill -9 -1`, fork bombs, `chmod` on
-`/`, `launchctl`/`systemctl`, and any command over 400 characters. It is
-explicitly **best effort** — the real guardrail is the human click.
-
-**Bounds:** 8 turns, 4 reads/turn, 10 files per proposal, 150 listing entries,
-300 s first token, 60 s inter-chunk, 120 s per command, 64 KB output kept for
-the UI and 4 KB fed back to the model.
-
-**Live observability.** Every turn, token batch (flushed every 100 ms — not one
-IPC event per token), file read and command is broadcast as an `AgentEvent`.
-The **agent orb** — a small pixel sunflower docked to the right edge, visible
-only while something runs — derives its status pill from that stream
-(`turn 3/8 · read src/foo.ts`, `command waiting for you`, `review ready`), and
-its spinning ring animates only while a model call or command is actually in
-flight. Dragging it repositions it (`agentOrbY`, persisted); a plain click
-opens the panel on the agents tab.
+Hovering expands the status pill (the main process widens the window; the pill
+lays out to the left). Dragging repositions it, persisted as `orbY`. A plain
+click — as opposed to a drag, separated by a 3 px threshold — opens the app the
+badge is currently showing.
 
 ---
 
@@ -1008,8 +991,8 @@ flickering; 5 consecutive failures give up for the session
 is hidden or `moodsEnabled` is unticked. Nothing is written to disk, nothing is
 sent to the model, nothing leaves the Mac.
 
-A mood **only ever shows at idle**: the moment a question, guide, agent or work
-run has something to say, the real pose wins.
+A mood **only ever shows at idle**: the moment a question, guide, code session
+or work run has something to say, the real pose wins.
 
 ---
 
@@ -1050,8 +1033,8 @@ true` lets the renderer see `mousemove`, and hovering the flower flips
 ### The menu-bar panel
 
 Four tabs: **home** (permissions, model, voice, moods toggle, roam/dock),
-**agents**, **work ↗**, **code ↗**. The footer's **quit** is a real button:
-`shutdownEverything()` cancels queued agents, the running errand, the
+**work ↗**, **code ↗**. The footer's **quit** is a real button:
+`shutdownEverything()` cancels the running errand, the
 Sunflower-Code session, the voice, the mood watcher and the Work/Code windows
 before the app exits.
 
@@ -1117,7 +1100,6 @@ dependencies, hand-rolled ANSI).
 | `/status` | the status card again |
 | `/clear` | forget the conversation and clear the screen |
 | `/work <task>` | hand a computer chore to Sunflower Work |
-| `/agents` | list background coding agents |
 | `/quit` (or `/exit`) | full shutdown |
 
 ---
@@ -1179,7 +1161,7 @@ opening the app.
 
 Recommended vision models: `qwen3-vl:8b`, `qwen2.5vl:3b`/`7b`,
 `llama3.2-vision:11b`, `moondream`, `llava:7b`/`13b`, `minicpm-v`. Text models
-for the coding agents: `qwen2.5-coder:7b`, `llama3.1:8b`, `deepseek-r1:7b`/`8b`.
+for the coding harness: `qwen2.5-coder:7b`, `llama3.1:8b`, `deepseek-r1:7b`/`8b`.
 
 "Active" means the `ollamaModel` field of `config.json`; the CLI rewrites
 **just that field** atomically (temp file + rename), leaving everything else
@@ -1327,7 +1309,7 @@ sunflower requirements --fix  # also runs pnpm install, the build, and pulls the
 | `ollamaModel` | `qwen3-vl:8b` | falls back to the first local vision model |
 | `whisperModel` | `ggml-small-q5_1.bin` | filename on `ggerganov/whisper.cpp` |
 | `screenCaptureConfirmed` | `false` | a capture actually succeeded once |
-| `agentOrbY` | `0.5` | vertical position of the agent orb, 0–1 |
+| `orbY` | `0.5` | vertical position of the orb, 0–1 |
 | `companionMode` | `"follow"` | `follow` \| `docked` |
 | `sunflowerWorkEnabled` | `false` | **opt-in** for Sunflower Work |
 | `workRequiredIdleSec` | `0` | idle seconds before the first gesture (`0` = start now) |
@@ -1352,11 +1334,11 @@ sunflower requirements --fix  # also runs pnpm install, the build, and pulls the
 ## Effort — one set of budgets for four surfaces
 
 `shared/effort.ts` holds `EFFORT_BUDGETS`: for each preset (`low` / `medium` /
-`high`) and each surface (`companion`, `code`, `work`, `agents`), a
+`high`) and each surface (`companion`, `code`, `work`), a
 `num_predict`, a `num_ctx`, a turn ceiling and a first-token wait.
 
 Before it existed, those numbers were module constants in four separate files
-(`main/ollama.ts`, `code/session.ts`, `work/runner.ts`, `agents/runner.ts`), so
+(`main/ollama.ts`, `code/session.ts`, `work/runner.ts`), so
 answering "why did it stop so early?" meant opening all four. **`medium`
 reproduces the historical values exactly** — changing preset is a deliberate
 act, doing nothing changes nothing.
@@ -1456,7 +1438,6 @@ ceiling in the same commit, which is a diff a reviewer cannot miss.
 | `state-machine.ts` · `hotkeyUp` | timer | 10 s | ❌ | ❌ | `clearTimers()` on every transition |
 | `work/runner.ts` · `finish` | timer | 0 | ❌ | ❌ | empty queue; Work is opt-in |
 | `work/clicker.ts` · `runOsa` | subprocess | per gesture | ❌ | ❌ | opt-in + 20 s real idle |
-| `agents/runner.ts` · `runCommand` | subprocess | per command | ❌ | ❌ | explicit user approval |
 | `code/tools.ts` · `run` | subprocess | per call | ❌ | ❌ | shell-guard + permission level |
 
 The check is a **heuristic, not a sound analysis**: rescheduling through an
@@ -1519,8 +1500,7 @@ flowchart TB
   `nodeIntegration: false`, and the entire surface is the explicit
   `SunflowerBridge`.
 - **File contents never cross IPC** from Sunflower-Code — only bounded diffs.
-- **Three independent write gates**: background agents need a per-file accept;
-  shell commands need a per-command click *and* survive the blacklist;
+- **Independent write gates**: shell commands must survive the blacklist, and
   Sunflower-Code's write/execute tools are gated by the permission level.
 - **Secrets are refused by path**: `.env*`, `.npmrc`, `.netrc`, `id_rsa`,
   `id_ed25519`, `.dev.vars` are rejected before being opened.
@@ -1662,7 +1642,7 @@ flowchart LR
 - Externals for the main bundle: `electron`, `uiohook-napi`, `smart-whisper`
   (native modules must not be bundled).
 - Nine renderer entry points: island, capture-worklet, companion, panel,
-  pointer, onboarding, agent-orb, work, code.
+  pointer, onboarding, orb, work, code.
 - `pnpm dev` (`build.mjs --watch`) rebuilds and relaunches Electron on change,
   waits for the old instance to exit (the single-instance lock is only released
   on real exit), and watches static assets separately since they are not in the
@@ -1737,7 +1717,6 @@ runs. That is precisely why the always-on budget is enforced there.
 | `tui.ts`, `tui-pixel.ts`, `tui-ansi.ts` | terminal UI |
 | `code/session.ts`, `code/tools.ts`, `code/transcript.ts` | Sunflower-Code |
 | `work/runner.ts`, `work/store.ts`, `work/clicker.ts` | Sunflower Work |
-| `agents/runner.ts` | background coding agents |
 | `windows/*.ts` | one module per surface + `common.ts` overlay factory |
 
 ### `apps/electron/src/shared`
@@ -1747,7 +1726,7 @@ Pure modules, no `electron`, no `node` — shared main ↔ renderer:
 `state.ts` (phases, poses, permissions, `PanelData`) · `ipc.ts` (`CH` +
 `SunflowerBridge`) · `config-schema.ts` · `code.ts` (modes, tools, gates,
 bounds, transcript types) · `work.ts` (statuses, actions, settings + clamping) ·
-`agents.ts` (run/command records, events) · `activity.ts` (families,
+`orb.ts` (what the right-edge badge shows) · `activity.ts` (families,
 classification) · `diff.ts` (bounded LCS) · `sunflower-pixels.ts` (all pixel
 art: poses, moods, brackets, menu-bar icon, bee, field).
 
@@ -1755,7 +1734,7 @@ art: poses, moods, brackets, menu-bar icon, bee, field).
 
 `island/` (status + mic capture + `capture-worklet.ts`) · `companion/`
 (flower, bubble, `tts.ts`) · `panel/` · `pointer/` · `onboarding/` ·
-`agent-orb/` · `work/` · `code/` · `shared/` (design tokens: colors, spacing,
+`orb/` · `work/` · `code/` · `shared/` (design tokens: colors, spacing,
 typography, effects, fonts + Newsreader woff2, `base.css`, `dev-stub.ts`).
 
 ---

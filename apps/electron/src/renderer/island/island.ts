@@ -51,7 +51,7 @@ function render(payload: StatePayload): void {
       payload.message ?? "something went wrong.",
     )}`;
   } else if (state === "acting") {
-    labelEl.textContent = `[->] ${payload.message ?? "an agent is working…"}`;
+    labelEl.textContent = `[->] ${payload.message ?? "something is running…"}`;
   } else if (state === "guiding") {
     labelEl.textContent = payload.message ?? "guiding…";
   } else {

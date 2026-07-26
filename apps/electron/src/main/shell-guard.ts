@@ -1,5 +1,5 @@
 // Liste noire de commandes shell, partagée par les deux endroits où sunflower
-// peut en exécuter une : les agents d'arrière-plan du panneau (agents/runner)
+// peut en exécuter une : l'outil bash de Sunflower-Code (code/tools)
 // et l'outil `bash` de Sunflower-Code (code/tools).
 //
 // Best effort assumé (un shell reste un shell) : le vrai garde-fou reste

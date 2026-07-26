@@ -10,9 +10,9 @@ export interface SunflowerConfig {
    *  par macOS après l'octroi de l'enregistrement d'écran. */
   screenCaptureConfirmed: boolean;
   /** Position verticale (0..1, du haut vers le bas de l'écran principal) du
-   *  petit rond des agents, ancré au bord droit — persistée après un glisser
-   *  (voir main/windows/agent-orb.ts). */
-  agentOrbY: number;
+   *  petit rond ancré au bord droit — persistée après un glisser
+   *  (voir main/windows/orb.ts). */
+  orbY: number;
   /** Compagnon : « follow » (suit le curseur, historique) ou « docked »
    *  (petit badge garé en bas à droite — regarder une vidéo sans tournesol
    *  au milieu de l'écran). Voir main/windows/companion.ts. */
@@ -57,7 +57,7 @@ export const DEFAULT_CONFIG: SunflowerConfig = {
   ollamaModel: "qwen3-vl:8b",
   whisperModel: "ggml-small-q5_1.bin",
   screenCaptureConfirmed: false,
-  agentOrbY: 0.5,
+  orbY: 0.5,
   companionMode: "follow",
   sunflowerWorkEnabled: false,
   workRequiredIdleSec: 0,

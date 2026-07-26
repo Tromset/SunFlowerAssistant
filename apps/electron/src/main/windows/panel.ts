@@ -66,7 +66,7 @@ function clampHeight(win: BrowserWindow, height: number): number {
 
 /**
  * Ajuste la fenêtre à la hauteur réelle de la carte. Sans ça, la fenêtre
- * gardait une hauteur fixe : une carte plus longue (onglet agents, revue avec
+ * gardait une hauteur fixe : une carte plus longue (beaucoup de sections, avec
  * diffs) était coupée net par le bas et perdait ses deux coins arrondis, ce
  * qui donnait cette impression de panneau « qui ne se termine pas ».
  * La carte plus haute que l'écran, elle, défile à l'intérieur (voir panel.css).

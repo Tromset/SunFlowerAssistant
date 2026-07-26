@@ -1,6 +1,6 @@
-/* Le rond des agents : disque noir/jaune docké au bord droit, visible le temps
-   qu'un agent de code tourne. La fenêtre (main) s'élargit au survol pour laisser
-   la place à la pastille de statut, déployée ici vers la gauche. */
+/* Le rond : disque noir/jaune docké au bord droit, visible le temps qu'un run
+   Code ou Work tourne. La fenêtre (main) s'élargit au survol pour laisser la
+   place à la pastille de statut, déployée ici vers la gauche. */
 html,
 body {
   height: 100%;

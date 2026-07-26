@@ -1,10 +1,10 @@
 import { screen, type BrowserWindow, type Display, type Rectangle } from "electron";
 import { CH } from "../../shared/ipc";
-import type { AgentEvent, AgentRunSummary } from "../../shared/agents";
+import type { OrbRun } from "../../shared/orb";
 import { getConfig, setConfig } from "../config-store";
 import { createOverlayWindow, rendererFile } from "./common";
 
-/** Diamètre du rond (doit coïncider avec agent-orb.css). */
+/** Diamètre du rond (doit coïncider avec orb.css). */
 export const ORB_D = 56;
 /** Hauteur de la fenêtre : le disque + un peu d'air pour l'anneau de pulsation. */
 const ORB_WIN_H = 80;
@@ -50,7 +50,7 @@ function displayAtCursor(): Display {
   return screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
 }
 
-export async function createAgentOrbWindow(): Promise<BrowserWindow> {
+export async function createOrbWindow(): Promise<BrowserWindow> {
   // focusable reste faux : le rond reçoit survol/glisser/clic sans jamais
   // voler le focus de l'app au premier plan (le clic ouvre le panneau
   // via IPC, aucun focus clavier n'est nécessaire).
@@ -61,23 +61,21 @@ export async function createAgentOrbWindow(): Promise<BrowserWindow> {
   // Contrairement aux autres superpositions (traversées par la souris), le rond
   // est interactif : survol, glisser vertical et clic.
   win.setIgnoreMouseEvents(false);
-  win.setBounds(boundsFor(displayAtCursor(), false, getConfig().agentOrbY));
-  await win.loadFile(rendererFile("agent-orb/agent-orb.html"));
+  win.setBounds(boundsFor(displayAtCursor(), false, getConfig().orbY));
+  await win.loadFile(rendererFile("orb/orb.html"));
   return win;
 }
 
 /**
- * Pilote le rond des agents : visible uniquement le temps qu'un agent tourne
- * (show/hide), diffuse le statut courant (setStatus, charge utile agentsChanged),
+ * Pilote le rond : visible uniquement le temps qu'un run Code ou Work tourne
+ * (show/hide), diffuse le statut courant (setStatus, charge utile orbChanged),
  * s'élargit au survol (setExpanded) et se repositionne au glisser vertical
- * (dragStart/Move/End, position persistée dans config.agentOrbY).
+ * (dragStart/Move/End, position persistée dans config.orbY).
  */
-export interface AgentOrbController {
+export interface OrbController {
   show(): void;
   hide(): void;
-  setStatus(runs: AgentRunSummary[]): void;
-  /** Événement fin du run en cours : le rond en dérive texte + animation. */
-  pushEvent(ev: AgentEvent): void;
+  setStatus(runs: OrbRun[]): void;
   setExpanded(expanded: boolean): void;
   dragStart(screenY: number): void;
   dragMove(screenY: number): void;
@@ -85,10 +83,8 @@ export interface AgentOrbController {
   dispose(): void;
 }
 
-export function createAgentOrbController(
-  win: BrowserWindow,
-): AgentOrbController {
-  let ratio = clamp(getConfig().agentOrbY, 0, 1);
+export function createOrbController(win: BrowserWindow): OrbController {
+  let ratio = clamp(getConfig().orbY, 0, 1);
   let expanded = false;
   let dragging = false;
   /** Décalage (points) entre le point saisi et le centre du rond, mémorisé au
@@ -98,10 +94,9 @@ export function createAgentOrbController(
   /** Écran d'ancrage : choisi à chaque show() (écran du curseur), figé le
    *  temps que le rond est visible pour que le glisser reste cohérent. */
   let disp = displayAtCursor();
-  let lastRuns: AgentRunSummary[] = [];
-  /** Dernier événement non-token : re-poussé quand le rond réapparaît, pour
-   *  qu'il n'affiche pas un mot d'état périmé en attendant le suivant. */
-  let lastEvent: AgentEvent | null = null;
+  /** Re-poussé quand le rond réapparaît, pour qu'il n'affiche pas un état
+   *  périmé en attendant le prochain changement. */
+  let lastRuns: OrbRun[] = [];
 
   const apply = () => {
     if (!win.isDestroyed()) win.setBounds(boundsFor(disp, expanded, ratio));
@@ -136,31 +131,23 @@ export function createAgentOrbController(
       apply();
       // Le renderer peut garder un état « déployé »/« glisser » d'une vie
       // antérieure : le resynchroniser avec la fenêtre repliée.
-      win.webContents.send(CH.agentOrbReset);
+      win.webContents.send(CH.orbReset);
       if (!win.isVisible()) win.showInactive();
       visible = true;
       // Repousser le dernier statut connu au rond fraîchement affiché.
-      if (lastRuns.length > 0) win.webContents.send(CH.agentsChanged, lastRuns);
-      if (lastEvent) win.webContents.send(CH.agentEvent, lastEvent);
+      if (lastRuns.length > 0) win.webContents.send(CH.orbChanged, lastRuns);
     },
     hide() {
       if (win.isDestroyed()) return;
       expanded = false;
       dragging = false;
       visible = false;
-      win.webContents.send(CH.agentOrbReset);
+      win.webContents.send(CH.orbReset);
       if (win.isVisible()) win.hide();
     },
     setStatus(runs) {
       lastRuns = runs;
-      if (!win.isDestroyed()) win.webContents.send(CH.agentsChanged, runs);
-    },
-    pushEvent(ev) {
-      // Les paquets de tokens/sortie sont transitoires : inutiles à rejouer.
-      if (ev.kind !== "model-token" && ev.kind !== "command-output") {
-        lastEvent = ev;
-      }
-      if (!win.isDestroyed()) win.webContents.send(CH.agentEvent, ev);
+      if (!win.isDestroyed()) win.webContents.send(CH.orbChanged, runs);
     },
     setExpanded(next) {
       // Pendant un glisser, la largeur est figée pour éviter un saut latéral.
@@ -183,8 +170,8 @@ export function createAgentOrbController(
       ratio = ratioFromCenterY(disp, screenY - grabOffsetY);
       apply();
       // Persister seulement si la position a réellement changé.
-      if (Math.abs(ratio - getConfig().agentOrbY) > 0.001) {
-        setConfig({ agentOrbY: ratio });
+      if (Math.abs(ratio - getConfig().orbY) > 0.001) {
+        setConfig({ orbY: ratio });
       }
     },
     dispose() {

@@ -5,7 +5,7 @@
  *
  *  Purement décoratif et purement LOCAL : rien n'est envoyé nulle part, rien
  *  n'est enregistré sur disque, et la détection s'arrête net dès qu'une
- *  session vocale ou un agent reprend la main sur l'affichage.
+ *  session vocale ou un run de travail reprend la main sur l'affichage.
  *
  *  Module sans dépendance (ni electron, ni node) : partagé main ↔ renderer et
  *  testable tel quel. */

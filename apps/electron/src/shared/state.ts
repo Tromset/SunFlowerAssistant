@@ -20,7 +20,7 @@ export type IslandState =
 
 /** Poses of the sunflower companion (prototype surface 1d).
  *  Les trois dernières sont des « vignettes d'activité » (scènes animées) :
- *  - coding  : le tournesol avec un petit ordinateur portable (agents de code)
+ *  - coding  : le tournesol avec un petit ordinateur portable (humeur « code »)
  *  - reading : loupe au-dessus d'un document (analyse de la capture d'écran)
  *  - working : tournesol casqué avec une clé (exécution d'outils/actions) */
 export type CompanionPose =

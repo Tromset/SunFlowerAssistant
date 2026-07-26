@@ -17,10 +17,10 @@ export function createOverlayWindow(opts: {
   width: number;
   height: number;
   show?: boolean;
-  /** Rare : superposition qui doit recevoir focus/souris (le rond des agents,
+  /** Rare : superposition qui doit recevoir focus/souris (le rond du bord droit,
    *  seul élément interactif — les autres restent traversés par la souris). */
   focusable?: boolean;
-  /** Par défaut le throttling reste coupé (île, compagnon, rond des agents :
+  /** Par défaut le throttling reste coupé (île, compagnon, rond :
    *  animations visibles en continu). Le passer à true pour les superpositions
    *  souvent masquées (pointer) : Chromium ralentit alors leurs timers quand
    *  elles sont cachées au lieu de brûler du CPU en fond. */

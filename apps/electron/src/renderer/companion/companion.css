@@ -460,7 +460,7 @@ body.flip #row {
   }
 }
 
-/* coding : l'humeur réutilise la vignette du portable des agents, donc les
+/* coding : l'humeur réutilise la vignette du portable de la pose, donc les
    mêmes animations — déclarées ici pour la classe mood-coding. */
 #flower.mood-coding .sf-typer {
   transform-box: fill-box;

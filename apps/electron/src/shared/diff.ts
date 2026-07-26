@@ -1,5 +1,5 @@
 /** Diff avant/après, ligne à ligne, bornée — le rendu « ce qui a changé »
- *  partagé par la revue des agents de fond (panneau) et par Sunflower-Code
+ *  partagé par Sunflower-Code (revue des changements et compte des lignes)
  *  (l'app, qui montre ce que le modèle vient d'écrire).
  *
  *  Vivait dans renderer/panel/panel.ts : le harnais calcule maintenant ses

@@ -5,13 +5,7 @@ import type {
   StatePayload,
 } from "./state";
 import type { SunflowerConfig } from "./config-schema";
-import type {
-  AgentCommandDecision,
-  AgentDecision,
-  AgentEvent,
-  AgentRun,
-  AgentRunSummary,
-} from "./agents";
+import type { OrbRun, OrbSource } from "./orb";
 import type { ActivitySnapshot } from "./activity";
 import type {
   CodeAppEvent,
@@ -39,12 +33,9 @@ export const CH = {
   guideStep: "sf:guide-step",
   panelData: "sf:panel-data",
   flip: "sf:flip",
-  agentsChanged: "sf:agents-changed",
-  // Événement fin d'un run d'agent (tour, token, lecture, commande…) —
-  // diffusé au panneau et au rond pendant le travail réel (voir AgentEvent).
-  agentEvent: "sf:agents:event",
-  // Le rond des agents demande au panneau de s'ouvrir sur l'onglet agents.
-  panelFocusAgents: "sf:panel-focus-agents",
+  // Ce que le rond affiche : les runs Code/Work en cours, déjà traduits en
+  // texte lisible par le main (voir shared/orb.ts).
+  orbChanged: "sf:orb:changed",
   // Le compagnon passe en badge docké (ou en sort) : le renderer compacte
   // sa mise en page (voir renderer/companion + windows/companion.ts).
   companionDocked: "sf:companion:docked",
@@ -65,14 +56,14 @@ export const CH = {
   // Survol de la fleur : la fenêtre du compagnon (sinon traversée par la
   // souris) devient interactive le temps du survol, pour le double-clic.
   companionHover: "sf:companion:hover",
-  // main → rond des agents : replie pastille/glisser (fenêtre re-affichée).
-  agentOrbReset: "sf:agent-orb:reset",
-  // Glisser vertical du rond des agents (voir windows/agent-orb.ts).
-  agentOrbHoverStart: "sf:agent-orb:hover-start",
-  agentOrbHoverEnd: "sf:agent-orb:hover-end",
-  agentOrbDragStart: "sf:agent-orb:drag-start",
-  agentOrbDragMove: "sf:agent-orb:drag-move",
-  agentOrbDragEnd: "sf:agent-orb:drag-end",
+  // main → rond : replie pastille/glisser (fenêtre re-affichée).
+  orbReset: "sf:orb:reset",
+  // Glisser vertical du rond (voir windows/orb.ts).
+  orbHoverStart: "sf:orb:hover-start",
+  orbHoverEnd: "sf:orb:hover-end",
+  orbDragStart: "sf:orb:drag-start",
+  orbDragMove: "sf:orb:drag-move",
+  orbDragEnd: "sf:orb:drag-end",
   // renderer → main (invoke)
   permissionsGet: "sf:permissions:get",
   permissionsRequest: "sf:permissions:request",
@@ -82,14 +73,8 @@ export const CH = {
   whisperDownload: "sf:whisper:download",
   onboardingDone: "sf:onboarding:done",
   appQuit: "sf:app:quit",
-  agentsList: "sf:agents:list",
-  agentStart: "sf:agents:start",
-  agentGet: "sf:agents:get",
-  agentDecide: "sf:agents:decide",
-  // Décision utilisateur sur UNE commande proposée (exécuter / refuser).
-  agentCommand: "sf:agents:command",
-  agentCancel: "sf:agents:cancel",
-  agentOrbOpen: "sf:agent-orb:open",
+  // Clic franc sur le rond : ouvre l'app du run affiché (Code ou Work).
+  orbOpen: "sf:orb:open",
   // Double-clic sur la fleur : bascule follow ↔ docked (persisté en config).
   companionToggleDock: "sf:companion:toggle-dock",
   // Le panneau mesure sa carte et demande à la fenêtre de s'ajuster : sans
@@ -156,10 +141,8 @@ export interface SunflowerBridge {
   onGuideStep(cb: (p: GuideStepPayload) => void): Unsubscribe;
   onPanelData(cb: (d: PanelData) => void): Unsubscribe;
   onFlip(cb: (side: "left" | "right") => void): Unsubscribe;
-  onAgentsChanged(cb: (runs: AgentRunSummary[]) => void): Unsubscribe;
-  /** Événements fins pendant un run (tours, tokens, lectures, commandes). */
-  onAgentEvent(cb: (ev: AgentEvent) => void): Unsubscribe;
-  onPanelFocusAgents(cb: () => void): Unsubscribe;
+  /** Ce que le rond doit afficher : les runs Code/Work en cours. */
+  onOrbChanged(cb: (runs: OrbRun[]) => void): Unsubscribe;
   /** Le compagnon vient d'être docké (true) ou libéré (false). */
   onCompanionDocked(cb: (docked: boolean) => void): Unsubscribe;
   /** Humeur contextuelle courante (app/site au premier plan classé). */
@@ -181,37 +164,17 @@ export interface SunflowerBridge {
   downloadWhisper(): Promise<void>;
   onboardingDone(): Promise<void>;
   quit(): Promise<void>;
-  // Agents de code en arrière-plan (revue accept/deny obligatoire).
-  agentsList(): Promise<AgentRunSummary[]>;
-  agentStart(
-    task: string,
-    workdir: string,
-    allowCommands: boolean,
-  ): Promise<AgentRunSummary>;
-  agentGet(id: string): Promise<AgentRun | null>;
-  agentDecide(
-    id: string,
-    path: string,
-    decision: AgentDecision,
-  ): Promise<AgentRun | null>;
-  /** Exécuter/refuser UNE commande proposée (run en awaiting-command). */
-  agentCommand(
-    id: string,
-    commandId: number,
-    decision: AgentCommandDecision,
-  ): Promise<AgentRun | null>;
-  agentCancel(id: string): Promise<void>;
-  // Petit rond des agents en arrière-plan (docké au bord droit de l'écran,
-  // visible uniquement le temps qu'un agent tourne — voir windows/agent-orb.ts).
+  // Petit rond docké au bord droit de l'écran, visible uniquement le temps
+  // qu'un run Code ou Work tourne — voir windows/orb.ts.
   /** Fenêtre du rond ré-affichée repliée : resynchroniser l'état visuel. */
-  onAgentOrbReset(cb: () => void): void;
-  agentOrbHoverStart(): void;
-  agentOrbHoverEnd(): void;
-  agentOrbDragStart(screenY: number): void;
-  agentOrbDragMove(screenY: number): void;
-  agentOrbDragEnd(screenY: number): void;
-  /** Clic (sans glisser) : ouvre le panneau sur l'onglet agents. */
-  agentOrbOpen(): Promise<void>;
+  onOrbReset(cb: () => void): void;
+  orbHoverStart(): void;
+  orbHoverEnd(): void;
+  orbDragStart(screenY: number): void;
+  orbDragMove(screenY: number): void;
+  orbDragEnd(screenY: number): void;
+  /** Clic (sans glisser) : ouvre l'app du run affiché. */
+  orbOpen(source: OrbSource): Promise<void>;
   /** Survol de la fleur (companion) : rend la fenêtre interactive ou non. */
   companionSetHover(hovering: boolean): void;
   /** Double-clic sur la fleur : bascule follow ↔ docked. */
