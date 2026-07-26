@@ -13,9 +13,15 @@
 // pas lequel a servi.
 //
 // Le contexte se renouvelle tout seul : au-delà du budget de tokens, la
-// session est COMPACTÉE (résumé local déterministe, zéro appel modèle en plus)
-// et repart d'une fenêtre neuve — c'est ce qui permet de coder longtemps avec
-// un modèle 8B.
+// session ouvre un TERMINAL neuf — le mot de Sunflower Work pour une fenêtre
+// de contexte renouvelée (work/runner.ts, renewTerminal). Résumé local
+// déterministe, zéro appel modèle en plus : c'est ce qui permet de coder
+// longtemps avec un modèle 8B.
+//
+// Trois choses traversent la couture, et c'est tout l'intérêt : le PROMPT DE
+// LA TÂCHE tel quel (image comprise), la passation cumulée des terminaux
+// précédents, et les derniers échanges verbatim. Changer de terminal ne doit
+// pas se voir depuis la tâche.
 import { checkOllama, createThinkStripper, ollamaHost } from "../ollama";
 import { getConfig } from "../config-store";
 import { budgetFor, type SurfaceBudget } from "../../shared/effort";
@@ -56,6 +62,17 @@ const budget = (): SurfaceBudget => budgetFor(getConfig().effort, "code");
 const MAX_TOOL_RESULT = 20_000;
 /** Résultat d'outil montré au CLI. */
 const MAX_TOOL_DISPLAY = 1200;
+/** Prompt de la tâche, réinjecté tel quel dans chaque terminal ouvert. Large :
+ *  c'est la DERNIÈRE chose qu'on tronque. */
+const MAX_TASK_CHARS = 4_000;
+/** Passation d'un terminal au suivant. Cumulée, donc bornée. */
+const MAX_HANDOFF_CHARS = 2_000;
+/** Derniers échanges repris VERBATIM dans le terminal neuf — ce qu'un résumé
+ *  ne peut pas rendre : les chemins exacts, les noms de symboles, ce que le
+ *  modèle vient de lire. */
+const HANDOFF_TAIL_MESSAGES = 4;
+/** …chacun tronqué à ça, pour que la queue ne remplisse pas la fenêtre neuve. */
+const MAX_TAIL_CHARS = 800;
 
 const BASE_RULES = [
   "You are Sunflower-Code, the coding agent that lives inside sunflower. You run 100% locally against the user's own Ollama — no cloud, no telemetry.",
@@ -325,7 +342,8 @@ export interface CodeSession {
   note(text: string): void;
   /** Joint une image au PROCHAIN message (`/image <chemin>`). */
   attachImage(imageB64: string): void;
-  /** Force un compactage tout de suite (`/compact`). Faux si rien à résumer. */
+  /** Ouvre un terminal neuf tout de suite (`/compact`) : la tâche et la
+   *  passation traversent, le reste tombe. Faux si rien à renouveler. */
   compact(): boolean;
   setMode(mode: CodeMode): void;
   setPermission(permission: CodePermission): void;
@@ -353,6 +371,20 @@ export function createCodeSession(deps: CodeSessionDeps): CodeSession {
    *  permission ou de dossier — la règle ne survit pas au contexte qui l'a
    *  justifiée. */
   const alwaysAllowed = new Set<string>();
+  /** Le message qui a lancé la tâche en cours — L'OBJET, pas une copie, pour
+   *  que sa capture d'écran (mode vision) traverse avec lui. Réinjecté tel
+   *  quel dans chaque terminal ouvert ; gardé après la fin de la requête, pour
+   *  qu'un `/compact` à l'invite sache encore de quelle tâche il parle. */
+  let taskMessage: OllamaMessage | null = null;
+  /** Ce que les terminaux précédents lèguent au courant. Cumulé. */
+  let handoff = "";
+  /** Fenêtre de contexte courante, 1-based. */
+  let terminal = 1;
+  /** Où le terminal courant commence dans `visible`. La passation ne résume
+   *  QUE la fenêtre qui se ferme : sans cette marque, chaque renouvellement
+   *  recopierait les outils déjà résumés par le précédent, et la passation
+   *  cumulée se remplirait de doublons au lieu d'histoire. */
+  let windowStart = 0;
   /** Image jointe au PROCHAIN message (`/image <chemin>`). */
   let pendingImage: string | null = null;
   let ctrl: AbortController | null = null;
@@ -376,31 +408,79 @@ export function createCodeSession(deps: CodeSessionDeps): CodeSession {
     emit({ kind: "status", status: next });
   };
 
-  /** Compactage : on garde le premier message utilisateur (l'intention) et un
-   *  résumé déterministe de ce qui a été fait, puis on repart d'une fenêtre
-   *  neuve. Aucun appel modèle supplémentaire — c'est ce qui rend le
-   *  renouvellement instantané et fiable. */
-  const compact = () => {
+  /** Ferme la fenêtre de contexte courante et en ouvre une neuve, sans que la
+   *  tâche s'en aperçoive. Aucun appel modèle supplémentaire — c'est ce qui
+   *  rend le renouvellement instantané et fiable.
+   *
+   *  La fenêtre neuve est faite de trois morceaux, dans cet ordre :
+   *    1. la passation — ce que les terminaux précédents ont fait, cumulé ;
+   *    2. les derniers échanges VERBATIM, tronqués ;
+   *    3. le prompt de la tâche, tel quel, en dernier.
+   *
+   *  La tâche est en dernier parce que c'est ce qu'un petit modèle local suit
+   *  le mieux, et parce que c'est précisément ce que l'ancien compactage
+   *  jetait : il repartait d'un résumé qui citait le PREMIER message de la
+   *  session, donc la mauvaise requête dès la deuxième tâche. */
+  const renewTerminal = () => {
     const spent = tokens;
-    const firstUser = visible.find((m) => m.role === "user");
-    const toolLines = visible
+    // -- La passation. Elle CUMULE (`(earlier) …`, comme work/runner.ts) :
+    //    sans ça, le troisième terminal ne saurait plus rien du premier.
+    const closing = visible.slice(windowStart);
+    const toolLines = closing
       .filter((m) => m.role === "tool")
       .slice(-12)
       .map((m) => `- ${m.content.split("\n")[0] ?? ""}`);
-    const lastAnswer = [...visible].reverse().find((m) => m.role === "assistant");
-    const summary = [
-      "Context was renewed to keep the model sharp. Here is what happened so far.",
-      firstUser ? `Original request: ${firstUser.content.slice(0, 600)}` : "",
+    const lastAnswer = [...closing].reverse().find((m) => m.role === "assistant");
+    handoff = [
+      handoff ? `(earlier) ${handoff}` : "",
       toolLines.length > 0 ? `Tools already run:\n${toolLines.join("\n")}` : "",
       lastAnswer ? `Your last answer: ${lastAnswer.content.slice(0, 800)}` : "",
-      "Continue from here. Re-read any file you are unsure about instead of guessing.",
     ]
       .filter(Boolean)
-      .join("\n\n");
-    messages = [{ role: "user", content: summary }];
+      .join("\n")
+      .slice(-MAX_HANDOFF_CHARS);
+
+    // -- La queue verbatim. Le message de la tâche en est exclu : il est
+    //    réempilé entier à la fin, avec son image. Les captures des autres
+    //    messages tombent — une image périmée coûte cher et ne dit plus rien.
+    const tail: OllamaMessage[] = messages
+      .filter((m) => m !== taskMessage)
+      .slice(-HANDOFF_TAIL_MESSAGES)
+      .map((m) => ({
+        role: m.role,
+        content: m.content.slice(0, MAX_TAIL_CHARS),
+        ...(m.tool_name !== undefined ? { tool_name: m.tool_name } : {}),
+      }));
+    // Un résultat d'outil en tête de fenêtre a perdu l'appel qui l'a produit.
+    while (tail[0]?.role === "tool") tail.shift();
+
+    terminal++;
+    messages = [
+      {
+        role: "user",
+        content: [
+          `Context was renewed to keep you sharp: you are now in terminal ${terminal} of this task, with a fresh window.`,
+          handoff ? `Earlier in this task (previous terminals):\n${handoff}` : "",
+          "The last exchanges follow, then the task again — unchanged. Continue from there, and re-read any file you are unsure about instead of guessing.",
+        ]
+          .filter(Boolean)
+          .join("\n\n"),
+      },
+      ...tail,
+    ];
+    if (taskMessage) {
+      // La copie tronquée DEVIENT le message de la tâche : le renouvellement
+      // suivant la reconnaît et la remet à la fin au lieu de la dupliquer.
+      taskMessage = {
+        ...taskMessage,
+        content: taskMessage.content.slice(0, MAX_TASK_CHARS),
+      };
+      messages.push(taskMessage);
+    }
     tokens = 0;
     turns = 0;
-    emit({ kind: "compacted", tokens: spent });
+    windowStart = visible.length;
+    emit({ kind: "compacted", tokens: spent, terminal });
   };
 
   /** Un appel d'outil, de la permission au résultat. */
@@ -528,12 +608,16 @@ export function createCodeSession(deps: CodeSessionDeps): CodeSession {
     }
     messages.push(userMessage);
     visible.push({ role: "user", content: message });
+    // LE prompt de la tâche : à partir d'ici, tout terminal ouvert le remet
+    // dans sa fenêtre. Posé avant la boucle, parce que le renouvellement peut
+    // tomber dès le premier tour (budget déjà dépassé par la requête d'avant).
+    taskMessage = userMessage;
 
     let answer = "";
     const maxTurns = budget().maxTurns;
     for (let turn = 1; turn <= maxTurns; turn++) {
       if (signal.aborted) throw new Error("interrupted");
-      if (tokens >= COMPACT_AT_TOKENS) compact();
+      if (tokens >= COMPACT_AT_TOKENS) renewTerminal();
       setStatus("thinking");
       const head: OllamaMessage[] = [
         {
@@ -661,7 +745,7 @@ export function createCodeSession(deps: CodeSessionDeps): CodeSession {
     },
     compact() {
       if (messages.length === 0) return false;
-      compact();
+      renewTerminal();
       return true;
     },
     approve(approved, callId, always) {
@@ -686,6 +770,12 @@ export function createCodeSession(deps: CodeSessionDeps): CodeSession {
       visible = [];
       turns = 0;
       tokens = 0;
+      // Plus de tâche, donc plus rien à faire traverser : on repart du
+      // terminal 1, sans passation héritée d'une conversation effacée.
+      taskMessage = null;
+      handoff = "";
+      terminal = 1;
+      windowStart = 0;
     },
     setMode(next) {
       mode = next;
@@ -704,6 +794,12 @@ export function createCodeSession(deps: CodeSessionDeps): CodeSession {
       visible = [];
       turns = 0;
       tokens = 0;
+      // Autre projet : la tâche et la passation de l'ancien n'ont plus de
+      // sens ici. Le compteur de terminaux repart avec la conversation.
+      taskMessage = null;
+      handoff = "";
+      terminal = 1;
+      windowStart = 0;
     },
     info: () => ({
       mode,
@@ -714,6 +810,7 @@ export function createCodeSession(deps: CodeSessionDeps): CodeSession {
       tokens,
       messages: visible.length,
       maxTurns: budget().maxTurns,
+      terminal,
     }),
     history: () => [...visible],
     busy: () => ctrl !== null,

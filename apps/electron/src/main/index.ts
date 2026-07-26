@@ -239,6 +239,7 @@ async function main(): Promise<void> {
         tokens: 0,
         messages: 0,
         maxTurns: codeMaxTurns(getConfig().effort),
+        terminal: 1,
       },
     onEvent: (ev: CodeAppEvent) => sendCode(CH.codeEvent, ev),
   });
@@ -1244,8 +1245,9 @@ async function main(): Promise<void> {
         return;
       case "compact":
         if (codeSession?.compact() === true) {
-          codeTranscript.note("context renewed.");
-          tui.ok("context renewed — the summary carries the thread.");
+          const n = codeSession.info().terminal;
+          codeTranscript.note(`terminal ${n} — the task carries over.`);
+          tui.ok(`terminal ${n} — your task and what was done carry over.`);
         } else {
           tui.notice("nothing to compact yet.");
         }

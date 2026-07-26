@@ -149,7 +149,12 @@ export function createCodeTranscript(deps: {
           return;
         case "compacted":
           renewals++;
-          push({ kind: "compacted", at: Date.now(), tokens: ev.tokens });
+          push({
+            kind: "compacted",
+            at: Date.now(),
+            tokens: ev.tokens,
+            terminal: ev.terminal,
+          });
           sendInfo();
           return;
         case "done":

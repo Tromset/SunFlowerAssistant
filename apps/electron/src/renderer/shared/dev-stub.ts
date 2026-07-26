@@ -142,6 +142,7 @@ export function ensureBridge(): void {
           tokens: 0,
           messages: 0,
           maxTurns: codeMaxTurns(DEFAULT_CONFIG.effort),
+          terminal: 1,
         },
         entries: [],
         draft: "",
