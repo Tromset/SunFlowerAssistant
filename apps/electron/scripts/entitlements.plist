@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Entitlements du runtime durci. INERTES tant que SUNFLOWER_SIGN_IDENTITY vaut
+  « - » : make-dmg.mjs ne les passe à codesign qu'avec une vraie identité
+  Developer ID, parce que le runtime durci n'a de sens que pour la notarisation.
+
+  Les trois premières sont ce que tout Electron réclame (V8 compile à la
+  volée). disable-library-validation est la clé critique ici : le bundle
+  charge des .node compilés localement — ceux que `sunflower requirements
+  --fix` installe pour la voix et le ⌃⌥ — et la validation de bibliothèques
+  les refuserait comme non signés par la même équipe.
+
+  Les helpers d'Electron auront en plus besoin de com.apple.security.cs.inherit
+  dans un fichier séparé le jour où on passera en Developer ID.
+-->
+<plist version="1.0">
+<dict>
+  <key>com.apple.security.cs.allow-jit</key><true/>
+  <key>com.apple.security.cs.allow-unsigned-executable-memory</key><true/>
+  <key>com.apple.security.cs.allow-dyld-environment-variables</key><true/>
+  <key>com.apple.security.cs.disable-library-validation</key><true/>
+  <key>com.apple.security.device.audio-input</key><true/>
+  <key>com.apple.security.automation.apple-events</key><true/>
+</dict>
+</plist>
