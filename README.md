@@ -64,7 +64,41 @@ The status island sits under the notch while sunflower listens and answers, and 
 | --- | --- | --- |
 | ![Island listening state](apps/electron/docs/screenshots/island-listening.png) | ![Island answering state](apps/electron/docs/screenshots/island-answering.png) | ![Cursor companion with speech bubble](apps/electron/docs/screenshots/companion.png) |
 
-### Run it
+### Install it
+
+```bash
+pnpm dmg            # writes apps/electron/dist-app/SunFlower.dmg
+```
+
+Open the image, drag `SunFlower.app` onto Applications, double-click it. No
+Node, no pnpm, no `pnpm install` — the bundle carries its own Electron runtime
+and its own dependencies. Nothing appears in the Dock: sunflower is a menu-bar
+app, and the flower shows up at the top right.
+
+**And the source comes with it.** Right-click the app → *Show Package
+Contents* → `Contents/Resources/source`. That folder is this repository, exactly
+as published — not a bundle, not an asar, plain files you can read and edit.
+Change something, run `Contents/Resources/tools/rebuild.command`, relaunch.
+It recompiles with the runtime inside the app: no toolchain, no network.
+
+`tools/update-from-github.command` takes a newer version: it clones, shows you
+what's coming and only writes after you confirm, so you can read the diff — or
+edit the clone first. Nothing checks for updates on its own. Don't like one?
+Don't run it. Want half of it? Edit before you apply it.
+
+Two caveats worth knowing before you build one:
+
+- **Apple Silicon only.** The embedded Electron runtime is per-architecture.
+- **Voice and the global ⌃⌥ are off in a fresh install.** They need two native
+  modules that compile per machine, so they are not in the image. Run
+  `tools/install-cli.command`, then `sunflower requirements --fix` — once, with
+  a network connection and the Xcode Command Line Tools.
+
+The image is signed ad-hoc, not notarised. Built and installed on the same Mac
+there is no Gatekeeper prompt at all; if it travels, the first launch needs a
+right-click → **Open** (or `xattr -dr com.apple.quarantine`).
+
+### Run it from source
 
 ```bash
 pnpm install        # once, at the repo root (builds whisper.cpp — needs Xcode CLT)
@@ -96,9 +130,20 @@ without moving.
 
 ### In the Finder, running in your terminal
 
+This is the *developer* shortcut — the one-file bundle that points at your
+checkout. For the standalone app, see **Install it** above.
+
 ```bash
 pnpm --filter sunflower make-app     # writes apps/electron/dist-app/SunFlower.app
 ```
+
+It picks up `apps/electron/assets/SunFlower.icns`, which is committed — so the
+bundle has the pixel sunflower as its Finder icon out of a fresh clone. That
+file is generated from the art itself (`APP_ICON` in `src/shared/sunflower-pixels.ts`,
+rasterised by the same `pixelArtPng` the tray uses); run
+`pnpm --filter sunflower make-icon` after changing it. If the Finder still shows
+the generic icon, that's its cache, not your build: `touch` the bundle, then
+`killall Finder`.
 
 Drag it wherever you like. Double-clicking it opens a terminal on `sunflower` —
 so the flower still lives in a terminal, with its TUI, and **closing that

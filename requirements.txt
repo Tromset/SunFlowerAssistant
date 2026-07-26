@@ -9,7 +9,10 @@
 ##   check everything:      sunflower requirements
 ##   install what it can:   sunflower requirements --fix
 ##
-# node: >=18
+## Node 22.12 est le plancher d'Electron 43, pas une préférence : en dessous,
+## le runtime refuse de démarrer. (Installé depuis le DMG, ce plancher est déjà
+## satisfait — l'app embarque son propre Node.)
+# node: >=22.12
 # pnpm: any
 # node-deps: installed
 # build: auto

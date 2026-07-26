@@ -110,7 +110,7 @@ const ENTRY_RE = /^#\s*([a-z0-9-]+)\s*:\s*(.+?)\s*$/;
 /** Entrées par défaut — identiques au requirements.txt commité, pour que la
  *  commande marche même depuis un checkout qui ne l'a pas encore. */
 const DEFAULT_ENTRIES = [
-  ["node", ">=18"],
+  ["node", ">=22.12"],
   ["pnpm", "any"],
   ["node-deps", "installed"],
   ["build", "auto"],
