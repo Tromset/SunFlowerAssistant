@@ -17,3 +17,7 @@
 + [x] Ajouter beaucoup de commande comme /btw ou /model dans le CLI
 
 + [x] Ajouter /effort pour définir le temps et l'effort que SunFlower va mettre dans une tâche
+
+## Repo :
+
++ [ ] : Ajouter des images de l'app actuelle, celle actuelle sont obsolètes
