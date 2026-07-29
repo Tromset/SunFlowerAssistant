@@ -68,7 +68,7 @@ function openLogSink() {
  * Spawn `bin` avec stdin/stdout hérités et stderr filtré. `onClose(code)`
  * est appelé après la sortie du process ET la vidange du tube stderr (les
  * dernières lignes d'un crash arrivent après l'exit), garde-fou d'1 s.
- * `env` remplace l'environnement hérité — le bundle .app s'en sert pour
+ * `env` remplace l'environnement hérité — bin/sunflower.js s'en sert pour
  * retirer ELECTRON_RUN_AS_NODE avant de lancer la vraie app.
  */
 function spawnQuiet(bin, args, opts = {}) {

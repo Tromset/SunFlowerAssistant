@@ -1314,11 +1314,6 @@ Electron, while the main process imports it directly (types in
 
 ### Packaging: `SunFlower.app`
 
-There are two bundles, and they answer different questions. `make-app` with no
-argument writes the *developer shortcut* described here. `make-app --bundled`,
-driven by `pnpm dmg`, writes the standalone app that ships in the DMG — see
-**Distribution: `SunFlower.dmg`** below.
-
 ```bash
 pnpm --filter sunflower make-app   # → apps/electron/dist-app/SunFlower.app
 ```
@@ -1349,67 +1344,6 @@ it does not crop); and 16 is the only width whose integer scales — 1, 2, 4, 8,
 `.icns` itself instead of shelling out to `iconutil`: since 10.7 the format is a
 header plus `OSType + length + raw PNG` chunks, which is twenty lines and works
 off macOS. `iconutil` is still preferred when it's there.
-
-### Distribution: `SunFlower.dmg`
-
-```bash
-pnpm dmg   # → apps/electron/dist-app/SunFlower.dmg
-```
-
-Four steps, each its own script, each skippable: `make-icon.mjs` →
-`stage-deps.mjs` → `make-app.mjs --bundled` → `make-dmg.mjs` (sign, `hdiutil`).
-
-**The bundle is the Electron bundle.** `Electron.app` is copied and becomes
-`SunFlower.app`; its binary is renamed `SunFlower-bin`, `Contents/MacOS/SunFlower`
-becomes a shell launcher, and `Info.plist` is edited key by key with
-`PlistBuddy` — never rewritten, because Electron's plist carries the usage
-descriptions and a missing `NSMicrophoneUsageDescription` is a hard crash on mic
-access. A binary living in `SunFlower.app/Contents/MacOS` belongs to
-`SunFlower.app`, so the name and icon in the Privacy panes are SunFlower's and
-not "Electron"'s. `Resources/vendor/node_modules/electron/index.js` is replaced
-by a shim returning the bundle's own binary, and `dist/` is dropped — one copy
-of the runtime, not two.
-
-**The source is `Contents/Resources/source`,** in the clear, exactly what
-`git ls-files` reports. `node_modules` live *beside* it in `Resources/vendor`,
-reached through relative symlinks that the launcher recreates on every start:
-`node_modules` is git-ignored, so replacing the source with a GitHub checkout
-would otherwise take the dependencies with it. `source` rather than `app`
-because Electron auto-loads `Contents/Resources/app` when started without a
-path argument, and the workspace root has no `main`.
-
-**Rebuilding needs nothing.** Electron embeds Node 22 — exactly `build.mjs`'s
-target — so `ELECTRON_RUN_AS_NODE=1` covers it: no system Node, no pnpm, no
-network. The launcher rebuilds whenever `dist/.build-ok` is absent, which is
-already what `bin/sunflower.js:79` does; deleting that sentinel is the
-documented gesture for forcing a rebuild.
-
-**`stage-deps.mjs` is where the difficulty is.** The repo has no `.npmrc`, so
-pnpm links `isolated` and `node_modules` is a symlink forest into the global
-store — not copyable. Staging reinstalls flat (`node-linker=hoisted`, written
-as a file so it survives into the bundle) from a `git ls-files` copy. No
-`--prod`: `esbuild` and `typescript` are runtime dependencies here, since
-`build.mjs` may run and it runs `check-loops.mjs`, which requires TypeScript.
-
-**Native modules are excluded on purpose.** `smart-whisper` compiles
-whisper.cpp per machine and `uiohook-napi` is architecture-specific; staging
-flips their `allowBuilds` entries to `false` and deletes the directories, which
-is what keeps Xcode CLT off the *builder's* prerequisites. `stt.ts:87` and
-`hotkey.ts:56` already degrade without throwing, so the app runs — it just
-doesn't listen. `sunflower requirements --fix` installs them afterwards. The
-DMG is still arm64-only: the embedded Electron runtime is per-architecture.
-
-**Signing is ad-hoc and one variable from being real.** `make-dmg.mjs` reads
-`SUNFLOWER_SIGN_IDENTITY` (default `-`); a real Developer ID switches on the
-hardened runtime, `scripts/entitlements.plist` and — if
-`SUNFLOWER_NOTARY_PROFILE` or the Apple ID trio is set — notarisation and
-stapling. Signing goes inside-out, since `--deep` is deprecated. Editing source
-inside a signed bundle invalidates the *resource* seal, not the binaries';
-`tools/rebuild.command` re-signs the outer bundle only, leaving the nested
-binary — and therefore its TCC grants — untouched.
-
-`hdiutil`, not `create-dmg`: requiring Homebrew to build a zero-prerequisite
-installer would contradict itself.
 
 ### `sunflower-requirements`
 

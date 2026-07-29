@@ -85,11 +85,10 @@ if (!existsSync(path.join(appRoot, "dist", ".build-ok"))) {
   if (build.status !== 0) process.exit(build.status ?? 1);
 }
 
-// Dans le bundle .app, ce script tourne SOUS Electron en mode node
-// (ELECTRON_RUN_AS_NODE=1) : c'est ce qui permet de recompiler et de lancer
-// sans Node système. Les deux spawns précédents veulent en hériter — ce sont
-// des scripts node. Celui-ci non : hérité tel quel, il démarrerait la vraie
-// app en node, sans fenêtre ni barre de menus. Il ne part que d'ici.
+// Si ce script tourne lui-même sous Electron en mode node
+// (ELECTRON_RUN_AS_NODE=1), les deux spawns précédents veulent en hériter —
+// ce sont des scripts node. Celui-ci non : hérité tel quel, il démarrerait la
+// vraie app en node, sans fenêtre ni barre de menus. Il ne part que d'ici.
 const appEnv = { ...process.env };
 delete appEnv.ELECTRON_RUN_AS_NODE;
 
