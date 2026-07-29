@@ -139,6 +139,21 @@ export function ensureBridge(): void {
     codeSetMode: () => Promise.resolve(),
     codeSetPermission: () => Promise.resolve(),
     codePickWorkdir: () => Promise.resolve(null),
+    // Pont Claude Code : rien à suivre dans un navigateur nu.
+    onClaudeChanged: sub("claudeChanged"),
+    onClaudeFinished: sub("claudeFinished"),
+    claudeStatus: () =>
+      Promise.resolve({
+        enabled: false,
+        install: "absent" as const,
+        active: 0,
+      }),
+    claudeSetEnabled: () =>
+      Promise.resolve({
+        ok: false,
+        enabled: false,
+        install: "absent" as const,
+      }),
   };
   window.sunflower = stub;
 }

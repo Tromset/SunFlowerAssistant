@@ -89,6 +89,14 @@ const bridge: SunflowerBridge = {
   codeSetPermission: (permission: CodePermission) =>
     ipcRenderer.invoke(CH.codeSetPermission, permission),
   codePickWorkdir: () => ipcRenderer.invoke(CH.codePickWorkdir),
+  // Pont Claude Code : les sessions suivies, et l'onde de fin.
+  onClaudeChanged: (cb) =>
+    on(CH.claudeChanged, cb as (...a: unknown[]) => void),
+  onClaudeFinished: (cb) =>
+    on(CH.claudeFinished, cb as (...a: unknown[]) => void),
+  claudeStatus: () => ipcRenderer.invoke(CH.claudeStatus),
+  claudeSetEnabled: (on_: boolean) =>
+    ipcRenderer.invoke(CH.claudeSetEnabled, on_),
 };
 
 contextBridge.exposeInMainWorld("sunflower", bridge);

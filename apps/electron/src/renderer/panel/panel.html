@@ -131,6 +131,27 @@
             </span>
           </label>
         </div>
+
+        <div class="section">
+          <span class="section-label">claude code</span>
+          <div class="model-box">
+            <div class="model-info">
+              <span class="model-title">finished?</span>
+              <span id="claude-sub" class="model-sub">off</span>
+            </div>
+            <span id="claude-badge" class="badge off">[--] off</span>
+          </div>
+          <label class="opt-in" for="claude-enable">
+            <input id="claude-enable" type="checkbox" />
+            <span>
+              watch the claude code sessions running in your terminals, and
+              ripple when one finishes. adds a hook block to
+              ~/.claude/settings.json — unticking removes it. nothing leaves
+              the mac.
+            </span>
+          </label>
+          <span id="claude-problem" class="claude-problem" hidden></span>
+        </div>
       </section>
 
       <div class="divider footer-divider"></div>

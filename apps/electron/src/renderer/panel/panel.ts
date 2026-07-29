@@ -3,6 +3,11 @@ import { ensureBridge } from "../shared/dev-stub";
 import { POSES, pixelArtSvg } from "../../shared/sunflower-pixels";
 import { ACTIVITY_LABELS, type ActivitySnapshot } from "../../shared/activity";
 import type { WorkSettings } from "../../shared/work";
+import {
+  claudeStateLabel,
+  type ClaudeStatus,
+  type ClaudeTask,
+} from "../../shared/claude";
 import type { PanelData, PermissionId } from "../../shared/state";
 
 ensureBridge();
@@ -222,6 +227,114 @@ document.getElementById("work-open")!.addEventListener("click", () => {
   void window.sunflower.workOpen();
 });
 void window.sunflower.workSettingsGet().then(renderWork);
+
+// ---- Pont Claude Code ---------------------------------------------------
+// « Se connecter à Claude et ses tâches » se voit ici : combien de sessions
+// tournent, et où. La notification, elle, est l'onde du compagnon.
+const claudeEnable = document.getElementById(
+  "claude-enable",
+) as HTMLInputElement;
+const claudeSub = document.getElementById("claude-sub")!;
+const claudeBadge = document.getElementById("claude-badge")!;
+const claudeProblem = document.getElementById("claude-problem")!;
+let claudeTasks: ClaudeTask[] = [];
+let claudeState: ClaudeStatus = {
+  enabled: false,
+  install: "absent",
+  active: 0,
+};
+
+/** Ce qui cloche, en clair — les réglages de Claude sont à l'utilisateur, pas
+ *  à nous : on montre l'écart au lieu de le recoller en douce. */
+function claudeTrouble(status: ClaudeStatus): string {
+  if (status.problem) return status.problem;
+  switch (status.install) {
+    case "no-claude":
+      return "claude code isn't installed on this mac.";
+    case "stale":
+      return "the hooks are there but sunflower's script is gone — tick again.";
+    case "partial":
+      return "claude's settings were edited by hand — tick again to repair.";
+    default:
+      return "";
+  }
+}
+
+function renderClaude(): void {
+  claudeEnable.checked = claudeState.enabled;
+  claudeEnable.disabled =
+    claudeState.install === "no-claude" || claudeState.install === "unreadable";
+
+  const trouble = claudeTrouble(claudeState);
+  claudeProblem.textContent = trouble;
+  claudeProblem.hidden = !trouble;
+
+  if (!claudeState.enabled) {
+    claudeBadge.className = "badge off";
+    claudeBadge.textContent = "[--] off";
+    claudeSub.textContent = "off — claude's settings are untouched";
+    return;
+  }
+  const live = claudeTasks.filter(
+    (t) => t.status === "working" || t.status === "waiting",
+  );
+  claudeBadge.className = `badge ${live.length ? "ok" : "off"}`;
+  claudeBadge.textContent = live.length ? "[ok] busy" : "[..] listening";
+  if (live.length) {
+    // Un seul projet : on le nomme. Plusieurs : on compte, la pastille est
+    // trop étroite pour une liste, et le détail est dans /claude.
+    claudeSub.textContent =
+      live.length === 1 && live[0]
+        ? `${live[0].project} · ${claudeStateLabel(live[0])}`
+        : `${live.length} sessions running`;
+    return;
+  }
+  const last = claudeTasks[0];
+  claudeSub.textContent = last
+    ? `last: ${last.project} · done`
+    : "no claude session yet";
+}
+
+claudeEnable.addEventListener("change", () => {
+  const want = claudeEnable.checked;
+  void window.sunflower.claudeSetEnabled(want).then((result) => {
+    claudeState = {
+      enabled: result.enabled,
+      install: result.install,
+      active: claudeState.active,
+      ...(result.problem ? { problem: result.problem } : {}),
+    };
+    if (result.ok && result.enabled && result.note) {
+      claudeProblem.textContent = result.note;
+      claudeProblem.hidden = false;
+      renderClaudeKeepNote();
+      return;
+    }
+    renderClaude();
+  });
+});
+
+/** Comme renderClaude, mais sans écraser la précision « ouvre une nouvelle
+ *  session » qu'on vient d'afficher : Claude ne lit ses hooks qu'au démarrage
+ *  d'une session, et sans le dire la fonctionnalité passe pour cassée. */
+function renderClaudeKeepNote(): void {
+  const note = claudeProblem.textContent;
+  renderClaude();
+  if (note && !claudeTrouble(claudeState)) {
+    claudeProblem.textContent = note;
+    claudeProblem.hidden = false;
+  }
+}
+
+window.sunflower.onClaudeChanged((tasks) => {
+  claudeTasks = tasks;
+  renderClaude();
+});
+
+void window.sunflower.claudeStatus().then((status) => {
+  claudeState = status;
+  renderClaude();
+});
 
 // ---- Compagnon : roam ↔ dock ------------------------------------------
 // Même état que le menu du tray et le double-clic sur la fleur ; on passe par

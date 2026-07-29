@@ -33,6 +33,12 @@ import {
   type WorkSettings,
 } from "../shared/work";
 import { createActivityWatcher, type ActivityWatcher } from "./activity";
+import { createClaudeWatcher, type ClaudeWatcher } from "./claude";
+import {
+  claudeStateLabel,
+  type ClaudeStatus,
+  type ClaudeTask,
+} from "../shared/claude";
 import { createCodeSession, type CodeSession } from "./code/session";
 import { createCodeTranscript, type CodeTranscript } from "./code/transcript";
 import { createWorkStore } from "./work/store";
@@ -177,6 +183,7 @@ async function main(): Promise<void> {
   let orb: BrowserWindow | null = null;
   let orbCtl: OrbController | null = null;
   let activity: ActivityWatcher | null = null;
+  let claude: ClaudeWatcher | null = null;
   let codeSession: CodeSession | null = null;
   let quitting = false;
   /** Dossier de départ du harnais : le cwd du terminal qui a lancé l'app.
@@ -300,6 +307,30 @@ async function main(): Promise<void> {
       workOnUserInput: next.onUserInput,
     });
     return next;
+  };
+
+  // ---- Pont Claude Code : état et interrupteur -------------------------
+  // Le réglage est la trace de l'INTENTION, l'installation est la vérité du
+  // terrain : on ne les recolle jamais en douce, on montre l'écart.
+  const claudeStatus = (): ClaudeStatus =>
+    claude?.status() ?? {
+      enabled: getConfig().claudeWatchEnabled,
+      install: "absent",
+      active: 0,
+    };
+  /** Le SEUL chemin qui écrit dans ~/.claude/settings.json, et il ne part que
+   *  d'un geste explicite : case du tray, /claude on|off, panneau. */
+  const setClaudeEnabled = (on: boolean) => {
+    const result = claude?.setEnabled(on) ?? {
+      ok: false,
+      enabled: false,
+      install: "absent" as const,
+      problem: "Sunflower isn't ready yet.",
+    };
+    // On n'inscrit l'intention que si le geste a abouti : une case cochée
+    // pendant que rien n'est installé mentirait au prochain démarrage.
+    if (result.ok) setConfig({ claudeWatchEnabled: result.enabled });
+    return result;
   };
 
   // ---- Statut agrégé (panneau + onboarding) ----------------------------
@@ -467,6 +498,11 @@ async function main(): Promise<void> {
     if (!dir) return null;
     return setCodeWorkdir(dir) ? dir : null;
   });
+  // ---- Pont Claude Code -------------------------------------------------
+  ipcMain.handle(CH.claudeStatus, () => claudeStatus());
+  ipcMain.handle(CH.claudeSetEnabled, (_e, on: boolean) =>
+    setClaudeEnabled(!!on),
+  );
   // Rond : survol (élargir), glisser vertical (repositionner), clic (ouvrir
   // l'app du run affiché). Voir windows/orb.ts.
   ipcMain.on(CH.orbHoverStart, () => orbCtl?.setExpanded(true));
@@ -801,6 +837,32 @@ async function main(): Promise<void> {
   companion?.on("hide", syncActivity);
   syncActivity();
 
+  // ---- Pont vers Claude Code -------------------------------------------
+  // La fleur regarde les sessions Claude Code qui tournent dans un terminal à
+  // côté, et fait une onde orange quand l'une d'elles a fini. Le signal vient
+  // de hooks que Claude lance lui-même : rien ne tourne ici quand Claude ne
+  // tourne pas, donc aucune ligne dans scripts/loop-budget.json.
+  //
+  // Strictement en LECTURE : Sunflower n'envoie jamais rien à Claude. Si ça
+  // changeait un jour, un hook Stop qui déclencherait un envoi tournerait en
+  // boucle sans fin — à garder en tête avant d'ajouter quoi que ce soit ici.
+  claude = createClaudeWatcher({
+    isEnabled: () => getConfig().claudeWatchEnabled,
+    wantsSound: () => getConfig().claudeChimeEnabled,
+    onChanged: (tasks: ClaudeTask[]) => {
+      sendTo(panel, CH.claudeChanged, tasks);
+    },
+    onFinished: (chime) => {
+      // Compagnon masqué (accueil en cours) : sendTo ne fait rien, et c'est
+      // très bien — une onde que personne ne peut voir n'a pas à être gardée.
+      sendTo(companion, CH.claudeFinished, chime);
+      tui.debug(`claude finished · ${chime.project}`);
+    },
+  });
+  // `fs.watch` ne survit pas toujours à une veille : le compagnon qui
+  // réapparaît est un événement déjà là, donc un rattrapage gratuit.
+  companion?.on("show", () => claude?.wake());
+
   // ---- Sunflower-Code : le harnais de codage ----------------------------
   // Tout ce qui est tapé au CLI hors du mode « ask » part ici (voir
   // routeToCode plus bas), et l'app dédiée tape dans la MÊME session : outils
@@ -839,6 +901,9 @@ async function main(): Promise<void> {
     workRunner?.dispose();
     codeSession?.dispose();
     activity?.dispose();
+    // Coupe l'écoute, LAISSE les hooks : l'opt-in survit au redémarrage, et on
+    // n'écrit jamais dans les réglages de Claude à la sortie.
+    claude?.dispose();
     machine?.interrupt();
     sendTo(companion, CH.ttsStop);
     releaseWorkWindow();
@@ -865,6 +930,40 @@ async function main(): Promise<void> {
       void openWorkWindow().then(() =>
         sendWork(CH.workChanged, workStore.list()),
       );
+    },
+    claudeItem: () => {
+      const status = claudeStatus();
+      // Une case qui ne peut pas marcher le dit AVANT le clic : sans ~/.claude
+      // il n'y a rien à installer, et un settings.json illisible ne doit pas
+      // être réécrit — dans les deux cas l'entrée est grisée et se renomme.
+      if (status.install === "no-claude") {
+        return {
+          label: "Claude Code not found",
+          checked: false,
+          enabled: false,
+        };
+      }
+      if (status.install === "unreadable") {
+        return {
+          label: "Claude hooks — settings.json unreadable",
+          checked: false,
+          enabled: false,
+        };
+      }
+      return {
+        label: "Notify me when Claude finishes",
+        checked: status.enabled,
+        enabled: true,
+      };
+    },
+    onToggleClaude: () => {
+      const result = setClaudeEnabled(!claudeStatus().enabled);
+      // Un clic de menu qui ne produit rien de visible est pire qu'une erreur :
+      // c'est une action explicite, elle a droit à une ligne au terminal.
+      if (!result.ok && result.problem) tui.warn(result.problem);
+      else if (result.enabled) tui.ok(`watching Claude — ${result.note ?? ""}`);
+      else tui.ok("no longer watching Claude — hooks removed.");
+      void pushStatus();
     },
   });
   // Pas de push-to-talk tant que l'accueil n'est pas terminé.
@@ -935,6 +1034,7 @@ async function main(): Promise<void> {
     ["/compact", "renew the context now, keeping a summary"],
     ["/clear", "forget the conversation"],
     ["/code", "open the sunflower-code app"],
+    ["/claude [on|off]", "tell me when Claude Code finishes a task"],
     ["/sessions", "saved sunflower work runs"],
     ["/status", "the status card again"],
     ["/work <task>", "hand a computer chore to sunflower work"],
@@ -1222,6 +1322,44 @@ async function main(): Promise<void> {
         }
         return;
       }
+      case "claude": {
+        const want = args.trim().toLowerCase();
+        if (want === "on" || want === "off") {
+          const result = setClaudeEnabled(want === "on");
+          if (!result.ok) {
+            tui.warn(result.problem ?? "couldn't change Claude's hooks.");
+            return;
+          }
+          if (result.enabled) {
+            tui.ok("watching Claude Code.");
+            if (result.note) tui.notice(result.note);
+          } else {
+            tui.ok("no longer watching Claude Code — hooks removed.");
+          }
+          return;
+        }
+        if (want) {
+          tui.warn("usage: /claude [on|off]");
+          return;
+        }
+        const status = claudeStatus();
+        // L'écart réglage / installation se montre, il ne se répare pas tout
+        // seul : réécrire les réglages de quelqu'un sans qu'il l'ait demandé
+        // n'est pas à nous de le décider.
+        tui.notice(
+          `claude bridge: ${status.enabled ? "on" : "off"} · hooks ${status.install}`,
+        );
+        if (status.problem) tui.warn(status.problem);
+        const tasks = claude?.list() ?? [];
+        if (!tasks.length) {
+          tui.log("  no Claude session seen yet.");
+          return;
+        }
+        for (const task of tasks.slice(0, 10)) {
+          tui.log(`  ${claudeStateLabel(task).padEnd(16)} ${task.project}`);
+        }
+        return;
+      }
       case "status":
         showStatus();
         return;
@@ -1348,6 +1486,7 @@ async function main(): Promise<void> {
     workRunner?.dispose();
     codeSession?.dispose();
     activity?.dispose();
+    claude?.dispose();
     companionCtl?.dispose();
     orbCtl?.dispose();
     islandVisibility?.dispose();

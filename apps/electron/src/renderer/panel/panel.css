@@ -295,6 +295,19 @@ header {
   color: var(--text-on-dark-soft);
 }
 
+/* Ce qui cloche du côté de Claude : réglages illisibles, hooks édités à la
+   main, script disparu. Affiché en clair plutôt que réparé en douce — le
+   fichier ~/.claude/settings.json appartient à l'utilisateur. Sert aussi à
+   dire qu'un hook fraîchement posé ne prendra effet qu'à la prochaine
+   session Claude, d'où le ton neutre plutôt qu'alarmant. */
+.claude-problem {
+  display: block;
+  padding: 0 0 10px 22px;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--orange);
+}
+
 .footer-divider {
   margin-top: 16px;
 }
