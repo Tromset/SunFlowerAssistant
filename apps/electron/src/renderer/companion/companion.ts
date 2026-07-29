@@ -14,10 +14,12 @@ import type { ActivityContext, ActivitySnapshot } from "../../shared/activity";
 import { ACTIVITY_CONTEXTS } from "../../shared/activity";
 import type { CompanionPose, StatePayload } from "../../shared/state";
 import { finish, initTts, pushText, stopTts } from "./tts";
+import { chime } from "./chime";
 
 ensureBridge();
 
 const flower = document.getElementById("flower")!;
+const wave = document.getElementById("wave")!;
 const flowerSvg = document.getElementById("flower-svg")!;
 const bubble = document.getElementById("bubble")!;
 const bubbleText = document.getElementById("bubble-text")!;
@@ -250,6 +252,50 @@ document.addEventListener("mouseleave", () => setHover(false));
 // Double-clic sur la fleur : bascule follow ↔ docked (persisté en config).
 flower.addEventListener("dblclick", () => {
   void window.sunflower.companionToggleDock();
+});
+
+/* ── L'onde « Claude a terminé » ───────────────────────────────────────
+   Trois anneaux orange, un petit son, et c'est tout : pas de bulle, pas de
+   voix, pas de Centre de notifications. Un signal d'ambiance sur ce QU'UN
+   AUTRE programme fait, là où une notification système est faite pour rendre
+   compte de ce que Sunflower a fait à votre place (voir le run de travail
+   dans main/index.ts, qui en poste une, lui).
+
+   L'ORDRE de ces trois lignes est porteur, pas cosmétique. Après 60 s
+   d'inactivité, body.anim-paused fige toute animation avec
+   `animation-play-state: paused` — et 60 s d'inactivité, c'est EXACTEMENT
+   l'état de quelqu'un qui attend que Claude finisse une longue tâche : le cas
+   courant, pas le cas limite. Un anneau inséré avant la levée du gel resterait
+   figé à mi-course et ne recevrait jamais son animationend. armAnimPause()
+   lève la classe et réarme le compte — et sémantiquement c'est ce qu'on veut :
+   la fleur se réveille quand Claude a fini. */
+const WAVE_MS = 1400;
+let waveTimer: number | null = null;
+
+const playClaudeWave = (sound: boolean): void => {
+  // 1. réveiller la fleur AVANT d'insérer quoi que ce soit.
+  armAnimPause(lastPose);
+  // 2. repartir de zéro : au pire deux ondes coup sur coup, jamais un tas.
+  wave.textContent = "";
+  for (let i = 0; i < 3; i++) {
+    const ring = document.createElement("i");
+    ring.className = "sf-ring";
+    wave.appendChild(ring);
+  }
+  // 3. nettoyage au temps, PAS sur animationend : le reset
+  //    prefers-reduced-motion de base.css pose `animation: none`, donc
+  //    l'événement ne viendrait jamais et les anneaux resteraient à l'écran.
+  //    Le corps du callback ne fait qu'un accès de propriété — rien que
+  //    check-loops.mjs puisse prendre pour une replanification.
+  if (waveTimer !== null) window.clearTimeout(waveTimer);
+  waveTimer = window.setTimeout(() => {
+    wave.textContent = "";
+  }, WAVE_MS);
+  if (sound) chime();
+};
+
+window.sunflower.onClaudeFinished((payload) => {
+  playClaudeWave(payload.sound);
 });
 
 initTts(() => window.sunflower.sendTtsEnded());

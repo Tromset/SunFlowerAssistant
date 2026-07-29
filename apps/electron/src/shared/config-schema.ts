@@ -43,6 +43,14 @@ export interface SunflowerConfig {
   codePermission: "plan" | "normal" | "yolo";
   /** Sunflower-Code : mode de départ du CLI (code / chat / vision / plan). */
   codeMode: "code" | "chat" | "vision" | "plan";
+  /** Pont vers Claude Code : suivre les sessions qui tournent dans un terminal
+   *  à côté, et signaler quand Claude a fini. FAUX par défaut — activer écrit
+   *  un bloc de hooks dans ~/.claude/settings.json, ce qui est un fichier de
+   *  l'utilisateur : l'accord passe par le menu du tray. Voir main/claude/. */
+  claudeWatchEnabled: boolean;
+  /** Le petit son qui accompagne l'onde orange quand Claude a terminé. Se
+   *  coupe sans couper l'onde. N'a de sens que si le pont est actif. */
+  claudeChimeEnabled: boolean;
   /** Combien de tokens et de tours SunFlower s'autorise par tâche. « medium »
    *  reproduit exactement les budgets historiques — voir shared/effort.ts. */
   effort: Effort;
@@ -67,6 +75,8 @@ export const DEFAULT_CONFIG: SunflowerConfig = {
   moodsEnabled: true,
   codePermission: "normal",
   codeMode: "code",
+  claudeWatchEnabled: false,
+  claudeChimeEnabled: true,
   effort: "medium",
   effortDeadlineMin: 0,
 };

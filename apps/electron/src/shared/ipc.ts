@@ -19,6 +19,12 @@ import type {
   WorkSessionSummary,
   WorkSettings,
 } from "./work";
+import type {
+  ClaudeChime,
+  ClaudeStatus,
+  ClaudeTask,
+  ClaudeToggleResult,
+} from "./claude";
 
 /** Canaux main → renderer (webContents.send). */
 export const CH = {
@@ -49,6 +55,10 @@ export const CH = {
   // Sunflower-Code : flux du harnais vers son app dédiée. La session est UNE,
   // partagée avec le terminal.
   codeEvent: "sf:code:event",
+  // Pont Claude Code : la liste des sessions suivies (panneau), et le signal
+  // « Claude a terminé » que le compagnon traduit en onde orange + son.
+  claudeChanged: "sf:claude:changed",
+  claudeFinished: "sf:claude:finished",
   // renderer → main (send)
   micData: "sf:mic-data",
   micError: "sf:mic-error",
@@ -101,6 +111,10 @@ export const CH = {
   codeSetMode: "sf:code:set-mode",
   codeSetPermission: "sf:code:set-permission",
   codePickWorkdir: "sf:code:pick-workdir",
+  // Pont Claude Code : l'état du pont, et l'interrupteur. L'activation écrit
+  // dans ~/.claude/settings.json, donc elle ne part QUE d'un geste explicite.
+  claudeStatus: "sf:claude:status",
+  claudeSetEnabled: "sf:claude:set-enabled",
 } as const;
 
 export interface MicDataPayload {
@@ -153,6 +167,10 @@ export interface SunflowerBridge {
   onWorkEvent(cb: (ev: WorkEvent) => void): Unsubscribe;
   /** Sunflower-Code : événement fin du harnais (token, outil, accord, info). */
   onCodeEvent(cb: (ev: CodeAppEvent) => void): Unsubscribe;
+  /** Pont Claude Code : les sessions suivies ont changé (panneau). */
+  onClaudeChanged(cb: (tasks: ClaudeTask[]) => void): Unsubscribe;
+  /** Pont Claude Code : Claude a terminé — onde orange et petit son. */
+  onClaudeFinished(cb: (chime: ClaudeChime) => void): Unsubscribe;
   sendMicData(pcm: Float32Array, sampleRate: number): void;
   sendMicError(code: MicErrorCode): void;
   sendTtsEnded(): void;
@@ -212,6 +230,12 @@ export interface SunflowerBridge {
   /** Sélecteur de dossier natif (feuille attachée à la fenêtre) ; rend le
    *  dossier retenu, ou null si annulé ou refusé. */
   codePickWorkdir(): Promise<string | null>;
+  // ---- Pont Claude Code -------------------------------------------------
+  claudeStatus(): Promise<ClaudeStatus>;
+  /** Interrupteur du pont. Activer écrit un bloc de hooks dans
+   *  ~/.claude/settings.json, couper le retire : d'où le retour détaillé,
+   *  que l'appelant affiche tel quel. */
+  claudeSetEnabled(on: boolean): Promise<ClaudeToggleResult>;
 }
 
 declare global {

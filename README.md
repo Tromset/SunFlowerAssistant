@@ -288,6 +288,31 @@ The orb costs nothing at rest. It has no timer of its own: it is recomputed
 only when the code session or the work runner emits an event it already had to
 emit, and it stays hidden until one of them is actually busy.
 
+### Telling you when Claude Code is done
+
+You start a long task in Claude Code, switch to something else, and then keep
+going back to the terminal to check. The flower is already on your desktop, so
+it can just tell you: **when a Claude Code session finishes, three orange rings
+spread out from the sunflower and a short two-note chime plays.** That's the
+whole notification — no speech, no Notification Center, no badge to dismiss.
+The panel's *claude code* section shows which sessions are live meanwhile, and
+`/claude` prints the same thing in the terminal.
+
+It's off by default, because switching it on edits a file that belongs to you.
+Tick **Notify me when Claude finishes** in the tray menu (or run `/claude on`)
+and sunflower adds a small hook block to `~/.claude/settings.json`, pointing at
+a fifteen-line shell script in its own data directory. Claude runs that script
+when a turn ends; the script drops the event in a spool folder; sunflower
+notices and ripples. Untick it and the block is removed — the file comes back
+byte-for-byte identical, and there's a copy of the original in
+`~/Library/Application Support/sunflower/claude/` either way. Sunflower never
+sends anything *to* Claude: the bridge only reads.
+
+Nothing polls. When Claude isn't running, this feature doesn't execute a single
+line — no timer, no watcher spinning, nothing added to the always-on budget.
+One caveat worth knowing: Claude reads its hooks when a session starts, so a
+terminal you already had open won't ripple until you start a new session.
+
 ### Sunflower Work — the errand runner and its app
 
 Sunflower can also drive your mouse and keyboard to finish a computer errand — "archive the newsletters," "close all these tabs," "empty the trash" — instead of just answering or narrating a guide. It's off by default: turn it on from the tray menu (**Enable Sunflower Work**), from the panel's *sunflower work* section, or from the work app itself (persisted as `sunflowerWorkEnabled`). Ask for something that reads as an errand rather than a question, and the model answers with a short acknowledgement plus an internal `[WORK: …]` marker (never shown or spoken) that hands the task to the work runner; `/work <chore>` at the CLI does the same thing directly; ask with it still off and sunflower just tells you where to flip the switch.

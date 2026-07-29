@@ -495,6 +495,67 @@ body.anim-paused *::after {
   animation-play-state: paused !important;
 }
 
+/* ── L'onde « Claude a terminé » ───────────────────────────────────────
+   Trois anneaux orange qui s'écartent de la tête de la fleur, puis
+   disparaissent. C'est la seule notification du pont vers Claude Code : ni
+   bulle, ni voix, ni Centre de notifications.
+
+   La couleur n'est pas choisie au hasard : --orange (#D97757) est décrit dans
+   tokens/colors.css comme « the Claude clay-orange accent ». Elle était déjà
+   là.
+
+   Coût au repos : EXACTEMENT ZÉRO — les anneaux n'existent pas tant qu'il n'y
+   a rien à annoncer, et l'animation est finie (une itération), pas infinie.
+   Transform et opacity seulement : composé par le GPU, aucun calcul de mise
+   en page, aucun repaint. */
+#wave {
+  position: absolute;
+  left: 32px;
+  top: 30px;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+.sf-ring {
+  position: absolute;
+  left: -26px;
+  top: -26px;
+  width: 52px;
+  height: 52px;
+  border: 2px solid var(--orange);
+  border-radius: 50%;
+  opacity: 0;
+  animation: sfClaudeWave 900ms cubic-bezier(0.2, 0.7, 0.3, 1) 1 both;
+}
+.sf-ring:nth-child(2) {
+  animation-delay: 130ms;
+}
+.sf-ring:nth-child(3) {
+  animation-delay: 260ms;
+}
+@keyframes sfClaudeWave {
+  from {
+    transform: scale(0.18);
+    opacity: 0.55;
+  }
+  to {
+    transform: scale(1);
+    opacity: 0;
+  }
+}
+/* Ceinture et bretelles contre le gel des 60 s : companion.ts lève déjà
+   body.anim-paused avant d'insérer les anneaux (armAnimPause), mais un anneau
+   figé à mi-course ne recevrait JAMAIS son animationend et resterait à
+   l'écran. `body.anim-paused *` pèse (0,1,1) ; `#flower .sf-ring` pèse (1,1,0)
+   et l'emporte donc par l'identifiant — même astuce que le bloc ci-dessus.
+   On ne touche QUE animation-play-state : le reset prefers-reduced-motion de
+   base.css pose `animation: none`, qu'aucun play-state ne peut ressusciter,
+   donc la préférence système reste respectée (l'onde ne s'anime pas, le son
+   reste — un son n'est pas un mouvement). */
+body.anim-paused #flower .sf-ring {
+  animation-play-state: running !important;
+}
+
 /* ── Mode docké ────────────────────────────────────────────────────────
    La fenêtre devient un badge ~110×110 garé en bas à droite (voir
    main/windows/companion.ts) : fleur réduite en bas à droite, bulle compacte

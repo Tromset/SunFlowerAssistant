@@ -29,6 +29,11 @@ export function createTray(opts: {
   onToggleWork: () => void;
   /** Ouvre l'app Sunflower Work (fenêtre dédiée). */
   onOpenWork: () => void;
+  /** Pont Claude Code : état lu à l'ouverture du menu, donc toujours juste.
+   *  L'entrée se grise et se renomme quand il n'y a rien à cocher — une case
+   *  qui ne peut pas marcher doit le dire avant le clic, pas après. */
+  claudeItem: () => { label: string; checked: boolean; enabled: boolean };
+  onToggleClaude: () => void;
 }): Tray {
   tray = new Tray(buildTrayImage());
   nativeTheme.on("updated", () => {
@@ -39,6 +44,7 @@ export function createTray(opts: {
     opts.onClick(tray!.getBounds());
   });
   tray.on("right-click", () => {
+    const claude = opts.claudeItem();
     tray!.popUpContextMenu(
       Menu.buildFromTemplate([
         {
@@ -55,6 +61,14 @@ export function createTray(opts: {
           click: opts.onToggleWork,
         },
         { label: "open Sunflower Work…", click: opts.onOpenWork },
+        { type: "separator" },
+        {
+          label: claude.label,
+          type: "checkbox",
+          checked: claude.checked,
+          enabled: claude.enabled,
+          click: opts.onToggleClaude,
+        },
         { type: "separator" },
         { label: "quit sunflower", click: opts.onQuit },
       ]),
