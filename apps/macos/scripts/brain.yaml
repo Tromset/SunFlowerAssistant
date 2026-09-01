@@ -1,0 +1,13 @@
+# brain.yaml — folder variables (brAIn rule 6)
+name: scripts
+purpose: "Automation for shipping a new version of the macOS app."
+parent: ../brain.yaml
+children: []
+files:
+  README.md: "This folder's hub"
+  release.sh: "Build → sign → DMG → notarize → Sparkle appcast → GitHub Release pipeline"
+  release-process.md: "How to cut a release with `release.sh`, one-time prerequisites included"
+when_to_read:
+  "How do I ship a new version of the macOS app?": release-process.md
+  "What exactly does the release pipeline run?": release.sh
+links: {}

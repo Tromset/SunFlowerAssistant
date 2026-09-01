@@ -1,0 +1,18 @@
+# brain.yaml — folder variables (brAIn rule 6)
+name: screenshots
+purpose: "App screenshots embedded in the user guide and the root hub."
+parent: ../brain.yaml
+children: []
+files:
+  README.md: "This folder's hub"
+  onboarding-welcome.png: "Onboarding, step 1 — welcome"
+  onboarding-permissions.png: "Onboarding, step 2 — permissions"
+  onboarding-model.png: "Onboarding, step 3 — local-model check"
+  panel.png: "Menu-bar panel with live permission, model and voice status"
+  island-listening.png: "Status island under the notch, listening state"
+  island-answering.png: "Status island under the notch, answering state"
+  companion.png: "Cursor-following companion with its speech bubble"
+when_to_read:
+  "Which screenshot shows the onboarding?": onboarding-welcome.png
+  "Which screenshot shows the companion?": companion.png
+links: {}

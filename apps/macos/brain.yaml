@@ -1,0 +1,21 @@
+# brain.yaml — folder variables (brAIn rule 6)
+name: macos
+purpose: "Earlier Swift/AppKit menu-bar implementation, kept for reference; talks to the Worker."
+parent: ../brain.yaml
+children:
+  - Glide/brain.yaml
+  - GlideTests/brain.yaml
+  - GlideUITests/brain.yaml
+  - scripts/brain.yaml
+files:
+  README.md: "This folder's hub"
+  appcast.xml: "Sparkle RSS feed listing signed DMG auto-update releases"
+  Config.xcconfig.example: "Example local build settings: Clerk key, team ID, PostHog key, server URL"
+  dmg-background.png: "Drag-to-Applications background for release DMGs"
+  .gitignore: "Ignores the local `Config.xcconfig`, builds, releases, Xcode user state"
+when_to_read:
+  "How do I build and run the Swift app?": ../../docs/guide/setup.md
+  "How do I configure signing and keys?": Config.xcconfig.example
+  "Where is the app code?": Glide/README.md
+  "How is a release shipped?": scripts/README.md
+links: {}

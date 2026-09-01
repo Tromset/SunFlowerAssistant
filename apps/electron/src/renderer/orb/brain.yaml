@@ -1,0 +1,13 @@
+# brain.yaml — folder variables (brAIn rule 6)
+name: orb
+purpose: "The right-edge activity orb and its hover status pill."
+parent: ../brain.yaml
+children: []
+files:
+  README.md: "This folder's hub"
+  orb.html: "Markup for the disc and pill"
+  orb.ts: "Shows Code/Work run status; drag, hover and click handlers"
+  orb.css: "Disc and expandable pill styles"
+when_to_read:
+  "What does the orb display and when?": orb.ts
+links: {}

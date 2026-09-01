@@ -1,0 +1,13 @@
+# brain.yaml — folder variables (brAIn rule 6)
+name: onboarding
+purpose: "The three-step first-run onboarding (welcome, permissions, local model)."
+parent: ../brain.yaml
+children: []
+files:
+  README.md: "This folder's hub"
+  onboarding.html: "Markup for the three steps"
+  onboarding.ts: "Drives the steps and permission requests"
+  onboarding.css: "Styles for the onboarding window"
+when_to_read:
+  "How are permissions requested during onboarding?": onboarding.ts
+links: {}

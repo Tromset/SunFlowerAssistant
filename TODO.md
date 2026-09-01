@@ -1,5 +1,7 @@
 # TODO
 
+> **Navigation:** [root hub](README.md) · [brain.yaml](brain.yaml) · related: [docs](docs/README.md)
+
 ## UI :
 
 + [x] Construire une app complète pour SunFlower, on arrête l'app electron seule, elle sera seulement un raccourci pour l'app, il faut que l'app soit dans mon finder mais run dans mon terminal, donc si je supprime le terminal elle disparaît 

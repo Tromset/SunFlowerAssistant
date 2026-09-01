@@ -1,0 +1,12 @@
+# brain.yaml — folder variables (brAIn rule 6)
+name: GlideUITests
+purpose: "XCUITest launch tests for the Swift prototype."
+parent: ../brain.yaml
+children: []
+files:
+  README.md: "This folder's hub"
+  GlideUITests.swift: "Placeholder launch and launch-performance tests"
+  GlideUITestsLaunchTests.swift: "Launch test attaching a launch screenshot"
+when_to_read:
+  "What do the UI tests cover?": GlideUITests.swift
+links: {}

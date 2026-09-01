@@ -1,0 +1,11 @@
+# brain.yaml — folder variables (brAIn rule 6)
+name: GlideTests
+purpose: "Unit tests for the Swift prototype."
+parent: ../brain.yaml
+children: []
+files:
+  README.md: "This folder's hub"
+  GlideTests.swift: "Tests for permission-prompt destinations and the screen-recording gate"
+when_to_read:
+  "What is unit-tested?": GlideTests.swift
+links: {}

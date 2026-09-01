@@ -1,0 +1,21 @@
+# brain.yaml — folder variables (brAIn rule 6)
+name: electron
+purpose: "Fully local Electron screen companion: local Whisper + local Ollama, no server, no API keys."
+parent: ../brain.yaml
+children:
+  - assets/brain.yaml
+  - bin/brain.yaml
+  - docs/brain.yaml
+  - lib/brain.yaml
+  - scripts/brain.yaml
+  - src/brain.yaml
+files:
+  README.md: "This folder's hub"
+  package.json: "Electron package manifest: bins, scripts and dependencies"
+  tsconfig.json: "TypeScript config extending the shared base, covering `src/**/*.ts`"
+when_to_read:
+  "How do I launch the app from a terminal?": bin/sunflower.js
+  "How is the app built and bundled?": scripts/build.mjs
+  "Where is the app source?": src/README.md
+  "Which bins and dependencies does the package declare?": package.json
+links: {}

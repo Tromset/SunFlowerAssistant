@@ -36,19 +36,55 @@
 		AA00BB0A2F65000A0039DA55 /* Config.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Config.xcconfig; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		AA00BB0B2F65000B0039DA55 /* Exceptions for "Glide" folder in "Glide" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				README.md,
+				brain.yaml,
+			);
+			target = 28F22CBE2F56440300A0FC59 /* Glide */;
+		};
+		AA00BB0C2F65000C0039DA55 /* Exceptions for "GlideTests" folder in "GlideTests" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				README.md,
+				brain.yaml,
+			);
+			target = 28F22CCB2F56440300A0FC59 /* GlideTests */;
+		};
+		AA00BB0D2F65000D0039DA55 /* Exceptions for "GlideUITests" folder in "GlideUITests" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				README.md,
+				brain.yaml,
+			);
+			target = 28F22CD52F56440300A0FC59 /* GlideUITests */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		28F22CC12F56440300A0FC59 /* Glide */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				AA00BB0B2F65000B0039DA55 /* Exceptions for "Glide" folder in "Glide" target */,
+			);
 			path = Glide;
 			sourceTree = "<group>";
 		};
 		28F22CCF2F56440300A0FC59 /* GlideTests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				AA00BB0C2F65000C0039DA55 /* Exceptions for "GlideTests" folder in "GlideTests" target */,
+			);
 			path = GlideTests;
 			sourceTree = "<group>";
 		};
 		28F22CD92F56440300A0FC59 /* GlideUITests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				AA00BB0D2F65000D0039DA55 /* Exceptions for "GlideUITests" folder in "GlideUITests" target */,
+			);
 			path = GlideUITests;
 			sourceTree = "<group>";
 		};

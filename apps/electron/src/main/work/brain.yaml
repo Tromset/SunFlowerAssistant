@@ -1,0 +1,18 @@
+# brain.yaml — folder variables (brAIn rule 6)
+name: work
+purpose: "The errand runner: vision loop, synthetic gestures, presence-guarded pauses."
+parent: ../brain.yaml
+children: []
+files:
+  README.md: "This folder's hub"
+  runner.ts: "The capture → vision → gesture loop, with pauses, budgets and context renewal"
+  actions.ts: "Catalog of gestures: schemas, needs, help lines"
+  clicker.ts: "Synthesizes macOS mouse/keyboard via osascript CGEvents, tagged as synthetic"
+  open-guard.ts: "Allows only safe http(s) URLs / non-dangerous app opens"
+  store.ts: "In-memory run store broadcasting UI events"
+when_to_read:
+  "How does a run decide and act?": runner.ts
+  "Which gestures exist?": actions.ts
+  "How are clicks and keys synthesized?": clicker.ts
+  "Why was an open refused?": open-guard.ts
+links: {}

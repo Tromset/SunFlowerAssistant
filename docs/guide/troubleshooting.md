@@ -1,0 +1,21 @@
+# Troubleshooting
+
+> **Navigation:** [guide hub](README.md) · [brain.yaml](brain.yaml) · related: [internals: troubleshooting](../internals/troubleshooting.md), [internals: watchdog](../internals/watchdog.md)
+
+**Answers ignore what's on screen.** The model probably has no `vision` capability — check `ollama show <model>`. If it does, `OLLAMA_NUM_CTX` may be too small for the screenshot.
+
+**Integrations never fire.** The model has no `tools` capability. `ollama show <model>` will tell you.
+
+**First reply is very slow.** Ollama loads the model into memory on first use. The Electron app now preloads it at launch and when you start speaking, shows `waking the model…` while it loads, and waits up to ~3 minutes for a cold first token (45 s once warm). If it still times out — `the model is still loading` — warm it manually with `ollama run <model>` or switch to a smaller vision model such as `minicpm-v`.
+
+**The app connects but answers come back empty.** `/chat` checks Ollama before it starts streaming, so the two most common causes now come back as a normal HTTP error instead of an empty answer: `503` means it can't reach Ollama at all (not running, wrong `OLLAMA_HOST`); `404` means Ollama is up but the requested model has never been pulled (`OLLAMA_MODEL` names a model you don't actually have — Ollama does not pull on demand). Either way the response body is `{ "error": "…" }` with Ollama's own message where there is one (e.g. `model 'qwen3-vl:8b' not found, try pulling it first`).
+
+If Ollama instead fails *after* streaming has already started — it goes away mid-answer, the model gets unloaded concurrently, or you cancel the request — `/chat` has already committed to HTTP 200, so the failure travels inside the stream as an AI SDK `error` chunk (`{ "type": "error", "errorText": "…" }`) instead of a response status. The macOS app now surfaces this instead of leaving you with dead air: `AISDK.swift` recognizes the `error` event type, extracts `errorText`, and throws it up to `CompanionManager`, which shows the message in the companion's response bubble near the cursor and speaks it (a short "sorry, i ran into a problem answering that" if the error text is long, the message itself if it's short). The Electron app doesn't go through this Worker/AI SDK path at all — it talks to Ollama's native `/api/chat` directly — but hits the same class of mid-stream failure and handles it the same way in spirit: it watches for an `error` field in Ollama's own NDJSON stream and, when it finds one, surfaces a red `[!!]` banner in the status island (auto-clearing after a couple of seconds) plus an `[sunflower] error: …` line in the terminal. Either way, check the Worker logs (`pnpm run dev:server` prints the Ollama error, e.g. `model 'qwen3-vl:8b' not found`), confirm Ollama is up (`curl http://localhost:11434/api/tags`), and confirm `OLLAMA_MODEL` names a model you have actually pulled.
+
+**Everything returns 401.** Clerk keys in `.dev.vars` and in the Xcode build settings must come from the same Clerk application.
+
+### Diagnostics: the watchdog
+
+The Electron app runs a lightweight watchdog alongside everything else: every 5 seconds it samples CPU and memory per-process (`app.getAppMetrics()`) and appends a JSON line to `~/Library/Application Support/sunflower/watchdog/watchdog-YYYY-MM-DD.jsonl` — one file per day, pruned automatically to a few days of history and a few megabytes total. If total CPU usage stays above ~300% (roughly three full cores) for more than 30 seconds it also logs a `warn` line naming every running process, so a "the app is heating up my Mac" report comes with an actual trail — screen capture, whisper.cpp, a stray `BrowserWindow`, Ollama running away with the GPU — instead of a guess. The watchdog never throws, never blocks the app on disk I/O, and never keeps the process alive at quit.
+
+It has a known blind spot, worth stating because it cost a release: a "300 % for 30 seconds" threshold sees a runaway model, but not a steady drip of short-lived child processes. The mood poll forked an `osascript` every 4 seconds for days without ever tripping a single `warn` line. That gap is what the static budget check (`apps/electron/scripts/check-loops.mjs`, and `CLAUDE.md`) exists to cover: the watchdog reports what is already burning, the check refuses to let it be written.

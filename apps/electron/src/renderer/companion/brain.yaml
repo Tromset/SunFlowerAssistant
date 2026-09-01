@@ -1,0 +1,17 @@
+# brain.yaml — folder variables (brAIn rule 6)
+name: companion
+purpose: "The cursor-following sunflower and its speech bubble."
+parent: ../brain.yaml
+children: []
+files:
+  README.md: "This folder's hub"
+  companion.html: "Markup for the flower and bubble"
+  companion.ts: "Pose, bubble streaming, moods, bees, TTS and chime wiring"
+  companion.css: "Flower, bubble and mood-prop animations"
+  tts.ts: "Speaks answers via macOS speechSynthesis"
+  chime.ts: "Synthesizes the short completion chime with Web Audio"
+when_to_read:
+  "How does the bubble stream text?": companion.ts
+  "How are answers spoken?": tts.ts
+  "Where do mood animations live?": companion.css
+links: {}

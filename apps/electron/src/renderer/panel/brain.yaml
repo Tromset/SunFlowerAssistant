@@ -1,0 +1,13 @@
+# brain.yaml — folder variables (brAIn rule 6)
+name: panel
+purpose: "The menu-bar panel: live permissions, model and voice status, launchers."
+parent: ../brain.yaml
+children: []
+files:
+  README.md: "This folder's hub"
+  panel.html: "Markup for home, settings and launchers"
+  panel.ts: "Live status wiring and app launchers"
+  panel.css: "Panel card styles"
+when_to_read:
+  "How does the panel size itself to its card?": panel.ts
+links: {}

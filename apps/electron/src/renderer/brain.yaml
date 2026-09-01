@@ -1,0 +1,20 @@
+# brain.yaml — folder variables (brAIn rule 6)
+name: renderer
+purpose: "One bundle per window surface — browser-side UI only, talking through `window.sunflower`."
+parent: ../brain.yaml
+children:
+  - island/brain.yaml
+  - companion/brain.yaml
+  - pointer/brain.yaml
+  - panel/brain.yaml
+  - onboarding/brain.yaml
+  - orb/brain.yaml
+  - code/brain.yaml
+  - work/brain.yaml
+  - shared/brain.yaml
+files:
+  README.md: "This folder's hub"
+when_to_read:
+  "Where is a given window's UI?": README.md
+  "Where are colours/spacing/typography defined?": shared/tokens/README.md
+links: {}

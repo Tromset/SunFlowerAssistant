@@ -1,0 +1,25 @@
+# brain.yaml — folder variables (brAIn rule 6)
+name: shared
+purpose: "Pure types and logic shared main ↔ renderer — no electron, no node imports."
+parent: ../brain.yaml
+children: []
+files:
+  README.md: "This folder's hub"
+  state.ts: "App phases, island states, poses, permissions, `PanelData`"
+  ipc.ts: "IPC channel constants (`CH`), payloads and the `SunflowerBridge` interface"
+  config-schema.ts: "`SunflowerConfig` shape and `DEFAULT_CONFIG`"
+  code.ts: "Code modes, tools, permission gates, bounds, transcript types"
+  work.ts: "Work statuses, actions, settings + clamping helpers"
+  claude.ts: "Claude Code task states, hook events, payload parsing"
+  orb.ts: "What the right-edge badge shows (`OrbRun`/`OrbSource`)"
+  activity.ts: "Activity families and frontmost-app/site classification"
+  effort.ts: "low/medium/high token and turn budgets for the four surfaces"
+  diff.ts: "Bounded line-LCS diff shared by Code and the panel"
+  sunflower-pixels.ts: "All pixel art: poses, moods, brackets, menu-bar icon, bee, field"
+when_to_read:
+  "Which IPC channels exist?": ipc.ts
+  "What is in config.json?": config-schema.ts
+  "Which modes/tools/gates does Code define?": code.ts
+  "Where is the pixel art?": sunflower-pixels.ts
+  "How are effort budgets defined?": effort.ts
+links: {}

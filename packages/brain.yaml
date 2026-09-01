@@ -1,0 +1,11 @@
+# brain.yaml — folder variables (brAIn rule 6)
+name: packages
+purpose: "Shared workspace packages."
+parent: ../brain.yaml
+children:
+  - config/brain.yaml
+files:
+  README.md: "This folder's hub"
+when_to_read:
+  "Where is the shared tsconfig?": config/README.md
+links: {}

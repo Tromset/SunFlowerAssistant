@@ -1,0 +1,11 @@
+# brain.yaml — folder variables (brAIn rule 6)
+name: preload
+purpose: "The contextBridge layer exposing the typed IPC bridge to renderers."
+parent: ../brain.yaml
+children: []
+files:
+  README.md: "This folder's hub"
+  index.ts: "Exposes `window.sunflower` (SunflowerBridge) over contextBridge"
+when_to_read:
+  "What can renderers call?": index.ts
+links: {}
