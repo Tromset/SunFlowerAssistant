@@ -1,0 +1,13 @@
+# brain.yaml — folder variables (brAIn rule 6)
+name: work
+purpose: "The three-column Sunflower Work window: agents, tool calls, terminal, chat, limits."
+parent: ../brain.yaml
+children: []
+files:
+  README.md: "This folder's hub"
+  work.html: "Markup for the three-column shell"
+  work.ts: "Agents, tools, terminal, chat and settings UI logic"
+  work.css: "Layout and styling for the Work window"
+when_to_read:
+  "How does the Work window render runs?": work.ts
+links: {}

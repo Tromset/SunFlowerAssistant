@@ -1,0 +1,15 @@
+# brain.yaml — folder variables (brAIn rule 6)
+name: shared
+purpose: "Base CSS, design tokens, fonts and the browser dev stub shared by all renderers."
+parent: ../brain.yaml
+children:
+  - fonts/brain.yaml
+  - tokens/brain.yaml
+files:
+  README.md: "This folder's hub"
+  base.css: "Shared reset, `[hidden]` fix and keyframe animations"
+  dev-stub.ts: "Browser stub for `window.sunflower` in design mode"
+when_to_read:
+  "Where are the design tokens?": tokens/README.md
+  "How do renderers run outside Electron?": dev-stub.ts
+links: {}

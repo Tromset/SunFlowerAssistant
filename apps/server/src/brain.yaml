@@ -1,0 +1,18 @@
+# brain.yaml — folder variables (brAIn rule 6)
+name: src
+purpose: "Hono app wiring and its route/service/middleware modules."
+parent: ../brain.yaml
+children:
+  - chat/brain.yaml
+  - middleware/brain.yaml
+  - routes/brain.yaml
+  - services/brain.yaml
+  - utils/brain.yaml
+files:
+  README.md: "This folder's hub"
+  index.ts: "Hono app: CORS, Clerk auth, route mounting"
+  types.ts: "Env bindings, chat/model request and capability types"
+when_to_read:
+  "How are requests authenticated and routed?": index.ts
+  "Which env bindings exist?": types.ts
+links: {}

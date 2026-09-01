@@ -1,0 +1,11 @@
+# brain.yaml — folder variables (brAIn rule 6)
+name: middleware
+purpose: "Request middleware for the Worker."
+parent: ../brain.yaml
+children: []
+files:
+  README.md: "This folder's hub"
+  auth.ts: "Clerk middleware rejecting requests without a `userId`"
+when_to_read:
+  "How is a request authenticated?": auth.ts
+links: {}

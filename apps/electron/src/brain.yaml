@@ -1,0 +1,17 @@
+# brain.yaml — folder variables (brAIn rule 6)
+name: src
+purpose: "TypeScript source, one folder per Electron process role."
+parent: ../brain.yaml
+children:
+  - main/brain.yaml
+  - preload/brain.yaml
+  - renderer/brain.yaml
+  - shared/brain.yaml
+files:
+  README.md: "This folder's hub"
+when_to_read:
+  "Where is app behaviour implemented?": main/README.md
+  "How do renderers call the main process?": preload/index.ts
+  "Where is a window's UI code?": renderer/README.md
+  "Where are shared types and pure logic?": shared/README.md
+links: {}

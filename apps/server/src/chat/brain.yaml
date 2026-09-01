@@ -1,0 +1,13 @@
+# brain.yaml — folder variables (brAIn rule 6)
+name: chat
+purpose: "Payload conversion and prompt construction for `/chat`."
+parent: ../brain.yaml
+children: []
+files:
+  README.md: "This folder's hub"
+  messages.ts: "Converts chat payloads into AI SDK messages, extracts user text"
+  instructions.ts: "Builds pointing/agent system prompts and toolkit intent heuristics"
+when_to_read:
+  "How is the system prompt built?": instructions.ts
+  "How are client messages converted?": messages.ts
+links: {}

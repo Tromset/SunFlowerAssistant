@@ -1,0 +1,13 @@
+# brain.yaml — folder variables (brAIn rule 6)
+name: services
+purpose: "Clients for the external systems the Worker fronts."
+parent: ../brain.yaml
+children: []
+files:
+  README.md: "This folder's hub"
+  ollama.ts: "Ollama host/model helpers, preflight reachability and pull checks"
+  composio.ts: "Composio client creation and per-user toolkit tool loading"
+when_to_read:
+  "How is Ollama reached and validated?": ollama.ts
+  "How are per-user tools loaded?": composio.ts
+links: {}

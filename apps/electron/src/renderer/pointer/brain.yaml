@@ -1,0 +1,13 @@
+# brain.yaml — folder variables (brAIn rule 6)
+name: pointer
+purpose: "The orange pointing-bracket overlay that frames the pointed element."
+parent: ../brain.yaml
+children: []
+files:
+  README.md: "This folder's hub"
+  pointer.html: "Markup shell for the brackets"
+  pointer.ts: "Draws and sizes brackets when the main process sends a target"
+  pointer.css: "Bracket appearance animation"
+when_to_read:
+  "How is the bracket frame drawn and sized?": pointer.ts
+links: {}

@@ -1,0 +1,40 @@
+# brain.yaml — folder variables (brAIn rule 6)
+name: Glide
+purpose: "Swift sources of the prototype: companion orchestration, auth, transcription, TTS, overlays."
+parent: ../brain.yaml
+children: []
+files:
+  README.md: "This folder's hub"
+  GlideApp.swift: "App entry: delegate, onboarding gate, menu bar, login item"
+  CompanionManager.swift: "Core orchestration: voice, screen, AI, TTS, overlays"
+  AISDK.swift: "Authenticated client streaming chat/vision requests to the Worker `/chat`"
+  GlideAuthManager.swift: "Clerk Google OAuth sign-in, session tokens, auth events"
+  BuddyDictationManager.swift: "Push-to-talk dictation state, mic capture, transcript pipeline"
+  BuddyTranscriptionProvider.swift: "Transcription provider protocol + AssemblyAI/Apple factory"
+  AssemblyAIStreamingTranscriptionProvider.swift: "WebSocket AssemblyAI streaming via server-issued token"
+  AppleSpeechTranscriptionProvider.swift: "On-device SFSpeech streaming transcription"
+  BuddyAudioConversionSupport.swift: "Converts capture buffers to mono PCM16"
+  CompanionScreenCaptureUtility.swift: "Captures displays as JPEG via ScreenCaptureKit"
+  GradiumTTSClient.swift: "Calls the Worker `/tts` and plays the WAV reply"
+  CompanionResponseOverlay.swift: "Cursor-following panel streaming the answer text"
+  OverlayWindow.swift: "Full-screen overlay cursor, navigation bubbles, overlay manager"
+  GlideDynamicIslandManager.swift: "Notch island UI for listening/thinking/speaking"
+  CompanionPanelView.swift: "Notch panel UI: settings and Composio integrations"
+  MenuBarPanelManager.swift: "Menu-bar status item toggling the island panel"
+  OnboardingView.swift: "First-launch onboarding SwiftUI flow"
+  OnboardingWindowController.swift: "Temporary Dock window hosting onboarding"
+  GlobalPushToTalkShortcutMonitor.swift: "CGEvent tap for the global push-to-talk shortcut"
+  WindowPositionManager.swift: "Permission helpers and screen geometry"
+  DesignSystem.swift: "Colours, typography, shared SwiftUI styles"
+  GlideAnalytics.swift: "Opt-in PostHog telemetry (hard no-op without key + toggle)"
+  AppBundleConfiguration.swift: "Reads server URL, Clerk and related keys from Info.plist"
+  Info.plist: "LSUIElement plist: Clerk, Sparkle, mic/screen/speech usage strings"
+  Glide.entitlements: "Non-sandbox entitlements: network, mic/camera, ScreenCaptureKit"
+  enter.mp3: "UI sound effect (enter)"
+  eshop.mp3: "UI sound effect (notification)"
+when_to_read:
+  "Where does everything get orchestrated?": CompanionManager.swift
+  "How does auth work?": GlideAuthManager.swift
+  "How is speech transcribed?": BuddyTranscriptionProvider.swift
+  "What telemetry exists and when?": GlideAnalytics.swift
+links: {}

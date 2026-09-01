@@ -1,0 +1,15 @@
+# brain.yaml — folder variables (brAIn rule 6)
+name: server
+purpose: "Hono API on a Cloudflare Worker — backend for the Swift app only; every route behind Clerk."
+parent: ../brain.yaml
+children:
+  - src/brain.yaml
+files:
+  README.md: "This folder's hub"
+  package.json: "Worker package: scripts and Hono/AI SDK dependencies"
+  tsconfig.json: "Server TypeScript config with Workers types"
+  wrangler.toml: "Wrangler config: entry, nodejs_compat, Ollama/TTS defaults under `[vars]`"
+when_to_read:
+  "How is the Worker configured and deployed?": wrangler.toml
+  "Where are the routes implemented?": src/routes/README.md
+links: {}

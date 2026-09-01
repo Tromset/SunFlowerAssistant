@@ -1,0 +1,12 @@
+# brain.yaml — folder variables (brAIn rule 6)
+name: config
+purpose: "Shared TypeScript configuration package extended by every workspace package."
+parent: ../brain.yaml
+children: []
+files:
+  README.md: "This folder's hub"
+  package.json: "Package manifest for `@piksy/config`"
+  tsconfig.base.json: "Base tsconfig the workspace packages extend"
+when_to_read:
+  "What compiler options do all packages share?": tsconfig.base.json
+links: {}

@@ -1,0 +1,11 @@
+# brain.yaml — folder variables (brAIn rule 6)
+name: docs
+purpose: "Images referenced by the documentation."
+parent: ../brain.yaml
+children:
+  - screenshots/brain.yaml
+files:
+  README.md: "This folder's hub"
+when_to_read:
+  "Where are the app screenshots?": screenshots/README.md
+links: {}

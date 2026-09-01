@@ -1,0 +1,11 @@
+# brain.yaml — folder variables (brAIn rule 6)
+name: assets
+purpose: "Committed binary assets for the Electron app."
+parent: ../brain.yaml
+children: []
+files:
+  README.md: "This folder's hub"
+  SunFlower.icns: "Finder icon for the `SunFlower.app` shortcut bundle — generated from the `APP_ICON` pixel art by `make-icon.mjs`"
+when_to_read:
+  "Where does the Finder icon come from?": SunFlower.icns
+links: {}

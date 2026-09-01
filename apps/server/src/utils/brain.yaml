@@ -1,0 +1,12 @@
+# brain.yaml — folder variables (brAIn rule 6)
+name: utils
+purpose: "Small pure helpers."
+parent: ../brain.yaml
+children: []
+files:
+  README.md: "This folder's hub"
+  audio.ts: "Base64 decode + PCM16-mono → WAV wrapping"
+  logging.ts: "Truncates arbitrary values into short safe log summaries"
+when_to_read:
+  "How is TTS audio wrapped into WAV?": audio.ts
+links: {}

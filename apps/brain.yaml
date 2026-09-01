@@ -1,0 +1,15 @@
+# brain.yaml — folder variables (brAIn rule 6)
+name: apps
+purpose: "The three applications of the monorepo."
+parent: ../brain.yaml
+children:
+  - electron/brain.yaml
+  - macos/brain.yaml
+  - server/brain.yaml
+files:
+  README.md: "This folder's hub"
+when_to_read:
+  "Where is the app that actually runs?": electron/README.md
+  "Where is the Swift prototype?": macos/README.md
+  "Where is the backend API?": server/README.md
+links: {}

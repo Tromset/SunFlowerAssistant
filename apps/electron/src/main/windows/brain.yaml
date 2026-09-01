@@ -1,0 +1,22 @@
+# brain.yaml — folder variables (brAIn rule 6)
+name: windows
+purpose: "One module per window surface, plus the shared transparent-overlay factory."
+parent: ../brain.yaml
+children: []
+files:
+  README.md: "This folder's hub"
+  common.ts: "Shared preload paths and the transparent overlay window factory"
+  island.ts: "Status island under the notch + idle visibility"
+  companion.ts: "Cursor-following sunflower overlay: fly/hold/dock modes, adaptive tracking loop"
+  pointer.ts: "On-screen pointing bracket overlay sized to the target"
+  panel.ts: "Menu-bar panel window, sized to its own card"
+  onboarding.ts: "First-run onboarding window"
+  orb.ts: "Right-edge orb showing active Code/Work runs, draggable"
+  code.ts: "Persistent hide-on-close Sunflower-Code app window"
+  work.ts: "Persistent hide-on-close Sunflower Work app window"
+when_to_read:
+  "How does the companion follow the cursor (and dock)?": companion.ts
+  "How is the pointing frame drawn?": pointer.ts
+  "Why does the panel never cut off?": panel.ts
+  "How are overlay windows configured?": common.ts
+links: {}

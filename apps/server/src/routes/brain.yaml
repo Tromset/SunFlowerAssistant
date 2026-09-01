@@ -1,0 +1,17 @@
+# brain.yaml — folder variables (brAIn rule 6)
+name: routes
+purpose: "One module per HTTP route family."
+parent: ../brain.yaml
+children: []
+files:
+  README.md: "This folder's hub"
+  chat.ts: "`POST /chat` — streams Ollama chat, optional Composio tools, pointing instructions"
+  models.ts: "`GET /models` — local Ollama models with capabilities"
+  tts.ts: "`POST /tts` — Gradium text-to-speech proxy returning WAV"
+  transcribe.ts: "`POST /transcribe-token` — short-lived AssemblyAI streaming tokens"
+  integrations.ts: "`/integrations/*` — Composio toolkit status, connect, disconnect"
+when_to_read:
+  "How does chat streaming and its error contract work?": chat.ts
+  "How are model capabilities reported?": models.ts
+  "How do Composio connections work?": integrations.ts
+links: {}

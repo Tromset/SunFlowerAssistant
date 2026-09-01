@@ -1,0 +1,30 @@
+# brain.yaml — folder variables (brAIn rule 6)
+name: sunflower
+purpose: "macOS screen companion that runs on local models — monorepo root."
+parent: null
+children:
+  - docs/brain.yaml
+  - apps/brain.yaml
+  - packages/brain.yaml
+files:
+  README.md: "This folder's hub"
+  TODO.md: "Running task list for the repo"
+  LICENSE: "MIT license"
+  requirements.txt: "Declarative project requirements — checked by `sunflower requirements`, never `pip install`ed"
+  package.json: "Workspace root: `dev`, `check-types`, `dev:server`, `start` scripts and shared dev deps"
+  pnpm-workspace.yaml: "pnpm workspace globs and the dependency catalog"
+  pnpm-lock.yaml: "pnpm lockfile (machine-generated — do not edit)"
+  turbo.json: "Turborepo task pipeline"
+  tsconfig.json: "Root TypeScript config"
+  bts.jsonc: "Better-T-Stack scaffold record (safe to delete, kept for provenance)"
+  .gitignore: "Git ignore rules"
+when_to_read:
+  "What is this project?": docs/guide/overview.md
+  "How do I install, run or configure anything?": docs/guide/README.md
+  "How does a feature work internally?": docs/internals/README.md
+  "Where is the source code?": apps/README.md
+  "What tasks are open?": TODO.md
+links:
+  ollama: https://ollama.com
+  upstream-glide: https://github.com/shujanshaikh/glide
+  ollama-code: https://github.com/Tromset/Ollama-Code

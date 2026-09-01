@@ -1,0 +1,13 @@
+# brain.yaml — folder variables (brAIn rule 6)
+name: docs
+purpose: "All project documentation, split for routing: user guide and technical internals."
+parent: ../brain.yaml
+children:
+  - guide/brain.yaml
+  - internals/brain.yaml
+files:
+  README.md: "This folder's hub"
+when_to_read:
+  "How do I use or set up Sunflower?": guide/README.md
+  "How is Sunflower built / why does it behave this way?": internals/README.md
+links: {}

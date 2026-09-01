@@ -1,0 +1,16 @@
+# brain.yaml — folder variables (brAIn rule 6)
+name: claude
+purpose: "Notices finished Claude Code sessions via hooks and a spool folder — read-only, event-driven."
+parent: ../brain.yaml
+children: []
+files:
+  README.md: "This folder's hub"
+  index.ts: "Assembles the watcher API from hooks, spool and store"
+  hooks.ts: "Installs/uninstalls the Sunflower hook block in `~/.claude/settings.json` (byte-for-byte restore)"
+  spool.ts: "`fs.watch` on the spool folder, draining hook payload files eventfully"
+  store.ts: "In-memory session registry emitting finish events (rings + chime)"
+when_to_read:
+  "What exactly is written to Claude's settings?": hooks.ts
+  "How do hook events reach Sunflower?": spool.ts
+  "How are live sessions tracked?": store.ts
+links: {}

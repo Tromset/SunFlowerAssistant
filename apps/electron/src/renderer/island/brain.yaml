@@ -1,0 +1,15 @@
+# brain.yaml — folder variables (brAIn rule 6)
+name: island
+purpose: "The status island under the menu-bar notch; also owns mic capture."
+parent: ../brain.yaml
+children: []
+files:
+  README.md: "This folder's hub"
+  island.html: "Markup for the island states and mic UI"
+  island.ts: "Renders island states and captures 16 kHz mono mic audio"
+  island.css: "Styles for island states, wave, bees"
+  capture-worklet.ts: "AudioWorklet posting mono PCM chunks to the island"
+when_to_read:
+  "How is mic audio captured?": capture-worklet.ts
+  "How do island states render?": island.ts
+links: {}
